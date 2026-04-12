@@ -1,0 +1,19 @@
+# MCP Framework & Core Utilities
+fastmcp>=0.1.0
+pydantic>=2.5.0
+uvicorn>=0.27.0
+fastapi>=0.109.0
+
+# Cognitive Analysis & NLP Metrics (For src/analysis/)
+textstat>=0.7.3
+numpy>=1.26.0
+scikit-learn>=1.4.0
+sentence-transformers>=2.3.1
+
+# Utilities
+python-dotenv>=1.0.0
+colorama>=0.4.6
+
+# Dashboard (Command Center)
+streamlit>=1.31.0
+pandas>=2.2.0
