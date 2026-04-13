@@ -78,7 +78,7 @@ def test_load_settings_custom():
     settings = load_settings()
     
     assert settings.server_name == "custom-server"
-    assert settings.transport == "http"
+    assert settings.transport == "sse"
     assert settings.host == "127.0.0.1"
     assert settings.port == 9000
     assert settings.max_sessions == 256

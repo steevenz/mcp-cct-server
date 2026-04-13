@@ -19,7 +19,7 @@ def test_planning_pipeline_selection():
         ThinkingStrategy.PLAN_AND_EXECUTE,
         ThinkingStrategy.REACT,
         ThinkingStrategy.TREE_OF_THOUGHTS,
-        ThinkingStrategy.CHAIN_OF_THOUGHT
+        ThinkingStrategy.POST_MISSION_LEARNING
     ]
     assert pipeline == expected_strategies
 

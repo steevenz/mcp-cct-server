@@ -60,7 +60,9 @@ def load_settings() -> Settings:
         raise ValueError("Invalid server name")
 
     transport = os.getenv("CCT_TRANSPORT", "stdio").strip().lower()
-    if transport not in {"stdio", "http"}:
+    if transport == "http":
+        transport = "sse"
+    if transport not in {"stdio", "sse", "streamable-http"}:
         raise ValueError("Invalid transport")
 
     host = os.getenv("CCT_HOST", "0.0.0.0").strip()

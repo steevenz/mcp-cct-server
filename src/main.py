@@ -143,13 +143,22 @@ def main():
     logger.info(f"Max Sessions: {settings.max_sessions}")
     logger.info("Simplified Toolset: thinking, rethinking, list_thinking")
     logger.info("Automatic Strategy: Enabled (Simple/Moderate/Complex detection)")
-    logger.info("Ready for JSON-RPC over stdin/stdout.")
+    
+    # Transport-specific readiness message
+    if settings.transport.strip().lower() in {"sse", "http"}:
+        logger.info(f"Ready for HTTP/SSE at http://{settings.host}:{settings.port}/sse")
+        logger.info(f"Messages endpoint at http://{settings.host}:{settings.port}/messages")
+    else:
+        logger.info("Ready for JSON-RPC over stdin/stdout.")
+        
     logger.info("Press Ctrl+C to gracefully shut down.")
     logger.info("======================================================")
 
     try:
-        # Start the FastMCP server (defaults to stdio if transport not specified)
-        mcp_instance.run()
+        transport = settings.transport.strip().lower()
+        if transport == "http":
+            transport = "sse"
+        mcp_instance.run(transport=transport)
     except KeyboardInterrupt:
         logger.info("Shutdown signal received. Terminating gracefully...")
     except Exception as e:

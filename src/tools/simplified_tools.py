@@ -230,7 +230,23 @@ def register_simplified_tools(mcp: FastMCP, orchestrator: CognitiveOrchestrator,
         
         # Step 2: Create session
         try:
-            profile_enum = CCTProfile(profile.lower()) if profile.lower() in ["balanced", "creative", "critical", "human_in_the_loop"] else CCTProfile.BALANCED
+            profile_lower = profile.lower()
+            if profile_lower == "creative":
+                profile_enum = CCTProfile.CREATIVE_FIRST
+            elif profile_lower == "critical":
+                profile_enum = CCTProfile.CRITICAL_FIRST
+            elif profile_lower == "human_in_the_loop":
+                profile_enum = CCTProfile.HUMAN_IN_THE_LOOP
+            elif profile_lower == "deep_recursive":
+                profile_enum = CCTProfile.DEEP_RECURSIVE
+            elif profile_lower == "balanced":
+                profile_enum = CCTProfile.BALANCED
+            else:
+                # Fallback to direct mapping if it matches the enum value exactly
+                try:
+                    profile_enum = CCTProfile(profile_lower)
+                except ValueError:
+                    profile_enum = CCTProfile.BALANCED
             
             # Select initial pipeline based on category/complexity
             pipeline = PipelineSelector.select_pipeline(problem_statement, complexity.value)
