@@ -1,7 +1,7 @@
 import pytest
 from src.core.models.enums import CCTProfile, ThoughtType, ThinkingStrategy
 from src.core.models.domain import EnhancedThought
-from src.engines.sequential.models import SequentialContext
+from src.core.models.contexts import SequentialContext
 
 def test_create_and_get_session(memory_manager):
     """Test full cycle of creating a session and retrieving it from SQLite."""

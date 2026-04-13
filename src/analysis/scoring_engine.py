@@ -13,8 +13,10 @@ from src.core.models.domain import EnhancedThought, ThoughtMetrics
 from src.core.models.enums import ThoughtType, ThinkingStrategy
 
 from src.analysis.metrics import cosine_similarity, sample_based_novelty, _cached_tokenize
-from src.analysis.quality import clarity_score, estimate_token_count
+from src.analysis.quality import clarity_score
+from src.utils.tokenizer import count_tokens
 from src.analysis.bias import detect_bias_flags
+from src.utils.pricing import pricing_manager
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,8 @@ class ScoringEngine:
         self,
         thought: EnhancedThought,
         history: List[EnhancedThought],
-        token_budget: Optional[int] = None
+        token_budget: Optional[int] = None,
+        model_id: str = "claude-3-5-sonnet-20240620"
     ) -> ThoughtMetrics:
         """
         Token-aware multi-dimensional analysis of a thought step.
@@ -78,24 +81,50 @@ class ScoringEngine:
             logger.debug(f"Cache hit for thought {thought.id}")
             return self._metrics_cache[cache_key]
 
+        # [FIX] Comprehensive Transparency: Calculate tokens and costs for ALL thoughts
+        # including those below the skip_analysis_threshold.
+        usage = thought.token_usage or {}
+        in_tokens = usage.get("input") 
+        if in_tokens is None:
+            # Fallback for single thought node analysis
+            in_tokens = count_tokens(content, model_id)
+            
+        out_tokens = usage.get("output")
+        if out_tokens is None:
+            # For a thought being scored, the 'output' is the thought itself
+            out_tokens = count_tokens(content, model_id)
+
+        costs = pricing_manager.calculate_costs(
+            model_id=model_id,
+            input_tokens=in_tokens,
+            output_tokens=out_tokens
+        )
+
         # Determine analysis depth based on content length
         if len(content) < self.config.skip_analysis_threshold:
             metrics = ThoughtMetrics(
                 clarity_score=0.5,
                 logical_coherence=0.5,
                 evidence_strength=0.5,
-                novelty_score=1.0
+                novelty_score=1.0,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+                input_cost_usd=costs["input_usd"],
+                output_cost_usd=costs["output_usd"],
+                input_cost_idr=costs["input_idr"],
+                output_cost_idr=costs["output_idr"],
+                currency_rate_idr=costs["currency_rate_idr"]
             )
             self._metrics_cache[cache_key] = metrics
             return metrics
 
-        # 1. Clarity Score (always fast with caching)
+        # 1. Clarity Score
         clarity = clarity_score(content)
 
         # 2. Logical Coherence
         coherence = self._calculate_coherence(thought, history, content)
 
-        # 3. Novelty Score (sampling for large histories)
+        # 3. Novelty Detection
         novelty = self._calculate_novelty(content, history)
 
         # 4. Information Density
@@ -108,7 +137,14 @@ class ScoringEngine:
             clarity_score=round(clarity, 3),
             logical_coherence=round(coherence, 3),
             evidence_strength=round(evidence_score, 3),
-            novelty_score=round(novelty, 3)
+            novelty_score=round(novelty, 3),
+            input_tokens=in_tokens,
+            output_tokens=out_tokens,
+            input_cost_usd=costs["input_usd"],
+            output_cost_usd=costs["output_usd"],
+            input_cost_idr=costs["input_idr"],
+            output_cost_idr=costs["output_idr"],
+            currency_rate_idr=costs["currency_rate_idr"]
         )
 
         # Cache result
@@ -159,7 +195,7 @@ class ScoringEngine:
             return 1.0 - max_sim
 
     def _calculate_density(self, content: str) -> float:
-        """Calculate information density."""
+        """Calculate information density using high-precision tokenizer."""
         tokens = _cached_tokenize(content)
         unique_tokens = set(tokens)
         return len(unique_tokens) / len(tokens) if tokens else 0.0

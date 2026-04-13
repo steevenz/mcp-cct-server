@@ -4,15 +4,17 @@ from src.core.models.enums import ThinkingStrategy, CCTProfile
 
 def test_actor_critic_trigger(memory_manager, sequential_engine):
     """Test standard hybrid payload injects context and prompts into the session flow."""
+    import uuid
     session = memory_manager.create_session("Refactor to DDD", CCTProfile.BALANCED, 5)
     
     # 1. Create the parent (target) thought utilizing direct storage
     from src.core.models.domain import EnhancedThought
-    from src.engines.sequential.models import SequentialContext
-    from src.core.models.enums import ThoughtType
+    from src.core.models.enums import ThoughtType, ThinkingStrategy
+    from src.core.models.contexts import SequentialContext
     
+    target_id = f"tt_target_{uuid.uuid4().hex[:8]}"
     target = EnhancedThought(
-        id="tt_target_1",
+        id=target_id,
         content="We should use a layered DDD approach.",
         thought_type=ThoughtType.ANALYSIS,
         strategy=ThinkingStrategy.SYSTEMATIC,
@@ -42,9 +44,10 @@ def test_actor_critic_trigger(memory_manager, sequential_engine):
     assert "DevOps Architect" in prompt_thought.content
 
 def test_actor_critic_missing_target(memory_manager, sequential_engine):
-    """Test safely catching an execution call for a ghost parent node."""
-    session = memory_manager.create_session("Test", CCTProfile.BALANCED, 3)
+    """Test that missing target thought raises ValueError."""
+    session = memory_manager.create_session("Test", CCTProfile.BALANCED, 5)
+    
     engine = ActorCriticEngine(memory_manager, sequential_engine)
     
-    with pytest.raises(ValueError, match="Target thought 'not_real' not found in memory registry"):
+    with pytest.raises(ValueError, match="Thought 'not_real' not found"):
         engine.execute(session.session_id, {"target_thought_id": "not_real"})

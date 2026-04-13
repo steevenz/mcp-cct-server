@@ -86,7 +86,7 @@ class DynamicPrimitiveEngine(BaseCognitiveEngine):
             parent = self.memory.get_thought(thought.parent_id)
             if parent:
                 parent.children_ids.append(thought.id)
-                self.memory.save_thought(session_id, parent)
+                self.memory.update_thought(session_id, parent)
 
         # 5. THINKING PATTERN ARCHIVING (Auto-Pilot)
         pattern = self.archiver.process_thought(session, thought)

@@ -1,7 +1,7 @@
-import asyncio
 import logging
 import sys
 import os
+import signal
 
 # Ensure the project root is in sys.path for internal module resolution
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,9 +24,12 @@ from src.modes.registry import CognitiveEngineRegistry
 from src.engines.orchestrator import CognitiveOrchestrator
 
 # API Layer / Tools
-from src.tools.cognitive_tools import register_cognitive_tools
-from src.tools.session_tools import register_session_tools
+# Simplified Tools: Hanya 3 tools dengan automatic strategy selection
+from src.tools.simplified_tools import register_simplified_tools
 from src.tools.export_tools import register_export_tools
+# Legacy tools (disabled untuk simplifikasi):
+# from src.tools.cognitive_tools import register_cognitive_tools
+# from src.tools.session_tools import register_session_tools
 
 # ============================================================================
 # ENTERPRISE LOGGING CONFIGURATION
@@ -35,7 +38,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.StreamHandler(sys.stderr)
     ]
 )
 logger = logging.getLogger("cct-mcp-server")
@@ -49,17 +52,42 @@ def main():
     logger.info("Bootstrapping Creative Critical Thinking (CCT) MCP Server...")
 
     # 1. Load Configuration from Environment
-    settings = load_settings()
-    logger.info(f"Configuration loaded: {settings.server_name} @ {settings.host}:{settings.port}")
+    try:
+        settings = load_settings()
+        logger.info(f"Configuration loaded: {settings.server_name} @ {settings.host}:{settings.port}")
+    except Exception as e:
+        logger.error(f"Failed to load configuration: {e}")
+        sys.exit(1)
+
+    # Reconfigure logging level based on settings
+    logging.getLogger().setLevel(getattr(logging, settings.log_level))
+
+    # Setup signal handlers for graceful shutdown (SIGTERM for Docker/systemd)
+    def _signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
 
     # 2. Initialize the MCP Server Instance
     mcp_instance = FastMCP(settings.server_name, host=settings.host, port=settings.port)
 
     # 3. Dependency Injection: Instantiate Core Engines
     logger.info("Initializing Core Cognitive Infrastructure...")
-    memory_manager = MemoryManager()
-    sequential_engine = SequentialEngine(memory_manager)
-    scoring_engine = ScoringEngine()  # NEW: Handles performance metrics
+    try:
+        memory_manager = MemoryManager()
+        sequential_engine = SequentialEngine(memory_manager)
+        scoring_engine = ScoringEngine()  # NEW: Handles performance metrics
+        
+        # Validate critical components
+        if not memory_manager or not sequential_engine or not scoring_engine:
+            raise RuntimeError("Failed to initialize critical engine components")
+            
+        logger.info("Core engines initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize core engines: {e}")
+        sys.exit(1)
     
     # 4. Dependency Injection: Initialize Fusion & Routing Services
     logger.info("Initializing Fusion Orchestrator and Dynamic Router...")
@@ -92,29 +120,29 @@ def main():
 
     logger.info("Registering API boundaries (MCP Tools)...")
 
-    # 6a. Register Cognitive Logic Tools (The Brains)
-    register_cognitive_tools(
+    # 6a. Register Simplified Tools (Hanya 3 tools dengan automatic strategy)
+    # session_start, session_think, session_list
+    register_simplified_tools(
         mcp=mcp_instance,
-        orchestrator=master_orchestrator
+        orchestrator=master_orchestrator,
+        settings=settings
     )
 
-    # 6b. Register Session Navigation Tools (The Memory Dashboard)
-    register_session_tools(
-        mcp=mcp_instance,
-        orchestrator=master_orchestrator
-    )
-
-    # 6c. Register Export & Metacognitive Analysis Tools (The Auditor)
+    # 6b. Register Export & Metacognitive Analysis Tools (The Auditor)
     register_export_tools(
         mcp=mcp_instance,
-        orchestrator=master_orchestrator
+        orchestrator=master_orchestrator,
+        settings=settings
     )
 
+
     logger.info("======================================================")
-    logger.info(f"CCT MCP Server is LIVE.")
+    logger.info(f"CCT MCP Server is LIVE (Simplified Mode).")
     logger.info(f"Server Name: {settings.server_name}")
     logger.info(f"Transport Protocol -> {settings.transport.upper()}")
     logger.info(f"Max Sessions: {settings.max_sessions}")
+    logger.info("Simplified Toolset: thinking, rethinking, list_thinking")
+    logger.info("Automatic Strategy: Enabled (Simple/Moderate/Complex detection)")
     logger.info("Ready for JSON-RPC over stdin/stdout.")
     logger.info("Press Ctrl+C to gracefully shut down.")
     logger.info("======================================================")

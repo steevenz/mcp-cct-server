@@ -13,6 +13,7 @@ async def test_complete_cognitive_cycle(orchestrator):
         profile="balanced"
     )
     session_id = session_result["session_id"]
+    session_token = session_result.get("session_token", "")
     assert session_id is not None
     
     # 2. Add an initial thought (Primitive: Systematic)
@@ -71,7 +72,7 @@ async def test_complete_cognitive_cycle(orchestrator):
     register_export_tools(mcp, orchestrator)
     analyze_tool = mcp._tool_manager.get_tool("analyze_session").fn
     
-    analysis = analyze_tool(session_id)
+    analysis = analyze_tool(session_id, session_token=session_token)
     assert "metrics" in analysis
     assert analysis["metrics"]["clarity_score"] > 0
     assert analysis["metrics"]["consistency_score"] > 0

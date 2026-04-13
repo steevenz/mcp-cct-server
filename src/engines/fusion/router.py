@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 
 from src.core.models.enums import ThinkingStrategy
 from src.core.models.domain import EnhancedThought, CCTSessionState
+from src.core.constants import PIVOT_THRESHOLD_CLARITY, PIVOT_THRESHOLD_COHERENCE
 from src.utils.pipelines import PipelineSelector
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,9 @@ class AutomaticPipelineRouter:
     """
 
     # Low-quality thresholds that trigger an 'Unconventional Pivot'
-    PIVOT_THRESHOLD_CLARITY = 0.4
-    PIVOT_THRESHOLD_COHERENCE = 0.3
+    # Using constants from core for centralized configuration
+    PIVOT_THRESHOLD_CLARITY = PIVOT_THRESHOLD_CLARITY
+    PIVOT_THRESHOLD_COHERENCE = PIVOT_THRESHOLD_COHERENCE
 
     def __init__(self, scoring_engine: Any):
         self.scoring = scoring_engine
@@ -69,8 +71,11 @@ class AutomaticPipelineRouter:
 
         # 3. Progressive Path: Follow the suggested pipeline or find next logical step
         current_index = session.current_thought_number
-        if current_index < len(session.suggested_pipeline):
-            next_strat = session.suggested_pipeline[current_index]
+        pipeline = session.suggested_pipeline
+        
+        # Bounds checking for safe pipeline access
+        if pipeline and 0 <= current_index < len(pipeline):
+            next_strat = pipeline[current_index]
             logger.info(f"[ROUTER] Proceeding with planned pipeline. Next: {next_strat.value}")
             return next_strat
 

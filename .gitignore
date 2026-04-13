@@ -65,6 +65,8 @@ venv.bak/
 .idea/
 *.swp
 *.swo
+.windsurf/
+.iderules
 
 # Project Specific Core Data (Persistence)
 *.sqlite
@@ -79,6 +81,10 @@ venv.bak/
 brain/
 docs/dispatches/
 docs/scratch/
+
+# Local caches / generated data
+database/metadata/forex_cache.json
+database/datasets/
 
 # OS Specific
 .DS_Store

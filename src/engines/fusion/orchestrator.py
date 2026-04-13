@@ -37,6 +37,7 @@ class FusionOrchestrator:
         session_id: str,
         thought_ids: List[str],
         synthesis_goal: str,
+        model_id: str,
         model_tier: str = "efficiency"
     ) -> EnhancedThought:
         """
@@ -108,8 +109,14 @@ class FusionOrchestrator:
             tags=["fusion", "synthesis", model_tier]
         )
 
-        # 4. Scoring Validation (Automatic Quality Gate)
-        metrics = self.scoring.analyze_thought(fusion_thought, thoughts)
+        # 4. Scoring Validation & Cost Analysis (Automatic Quality Gate)
+        from src.core.constants import MAX_ANALYSIS_TOKEN_BUDGET
+        metrics = self.scoring.analyze_thought(
+            fusion_thought, 
+            thoughts,
+            token_budget=MAX_ANALYSIS_TOKEN_BUDGET,
+            model_id=model_id
+        )
         fusion_thought.metrics = metrics
         
         # 5. Persist

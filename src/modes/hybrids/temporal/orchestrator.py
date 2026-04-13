@@ -80,7 +80,7 @@ class LongTermHorizonEngine(BaseCognitiveEngine):
         # 5. Save to memory and link tree
         self.memory.save_thought(session_id, temporal_thought)
         target_thought.children_ids.append(temporal_thought.id)
-        self.memory.save_thought(session_id, target_thought)
+        self.memory.update_thought(session_id, target_thought)
 
         logger.info(f"Temporal projection node {temporal_thought.id} created successfully.")
         

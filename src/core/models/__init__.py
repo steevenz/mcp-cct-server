@@ -1,4 +1,4 @@
-from .enums import ThinkingStrategy, ThoughtType, ConfidenceLevel, CCTProfile
+from .enums import ThinkingStrategy, ThoughtType, ConfidenceLevel, CCTProfile, SessionStatus
 from .domain import (
     EnhancedThought, 
     ThinkingSession, 
@@ -30,5 +30,6 @@ __all__ = [
     "utc_now",
     "StartCCTSessionInput",
     "CCTThinkStepInput",
-    "SequentialContext"
+    "SequentialContext",
+    "SessionStatus"
 ]

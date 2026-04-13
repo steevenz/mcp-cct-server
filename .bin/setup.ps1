@@ -1,102 +1,109 @@
-# File: src/.bin/setup.ps1
+# File: .bin/setup.ps1
 # Author: Steeven Andrian — Senior Systems Architect
-# Objective: Production-Grade Initialization for CCT MCP Server
+# Design: Laravel Artisan Style CLI
 
-$ErrorActionPreference = "Stop"
+Param(
+    [switch]$Force,      # Recreate venv and reset database
+    [switch]$SkipDeps,   # Skip pip installation
+    [switch]$Run,        # Run the server after setup
+    [switch]$Help        # Show this help message
+)
 
-# --- Visual Assets ---
-$Banner = @"
-  ██████╗ ██████╗████████╗     ██████╗ ██████╗ 
- ██╔════╝██╔════╝╚══██╔══╝    ██╔═══██╗██╔══██╗
- ██║     ██║        ██║       ██║   ██║██████╔╝
- ██║     ██║        ██║       ██║   ██║██╔═══╝ 
- ╚██████╗╚██████╗   ██║       ╚██████╔╝██║     
-  ╚═════╝ ╚═════╝   ╚═╝        ╚═════╝ ╚═╝     
-                                               
-     COGNITIVE OPERATING SYSTEM
-     Author: Steeven Andrian
-"@
+$Version = "1.0.0"
 
-Write-Host "`n" -ForegroundColor Cyan
-Write-Host $Banner -ForegroundColor Cyan
-Write-Host "--------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "Initializing Elite Architect Workspace..." -ForegroundColor Green
-Write-Host "`n"
+# --- Visual Setup ---
+if ($Help) {
+    Write-Host "`n  CCT COGNITIVE SERVER " -NoNewline -BackgroundColor Yellow -ForegroundColor Black
+    Write-Host " $Version" -ForegroundColor DarkGray
+    Write-Host "  Crafted By Steeven Andrian Salim - https://github.com/steevenz`n" -ForegroundColor Gray
+    Write-Host "  USAGE: setup.ps1 [options]`n"
+    Write-Host "  OPTIONS:"
+    Write-Host "    --force          Force recreate .venv and reset cct_memory.db" -ForegroundColor Gray
+    Write-Host "    --skip-deps      Skip installing dependencies from requirements.txt" -ForegroundColor Gray
+    Write-Host "    --run            Automatically start the server after successful setup" -ForegroundColor Gray
+    Write-Host "    --help           Display this help information`n"
+    exit 0
+}
+
+# --- Artisan Banner ---
+Write-Host "`n  CCT COGNITIVE SERVER " -NoNewline -BackgroundColor Yellow -ForegroundColor Black
+Write-Host " $Version" -ForegroundColor DarkGray
+Write-Host "  Crafted By Steeven Andrian Salim - https://github.com/steevenz`n" -ForegroundColor Gray
+
+# --- Progress Helpers ---
+function Show-Status ([string]$Label, [string]$Status, [string]$Color = "Green") {
+    $IndentedLabel = "  " + $Label.PadRight(40, ".")
+    Write-Host $IndentedLabel -NoNewline -ForegroundColor Gray
+    Write-Host " [" -NoNewline -ForegroundColor Gray
+    Write-Host "$Status" -NoNewline -ForegroundColor $Color
+    Write-Host "]" -ForegroundColor Gray
+}
 
 # --- 1. Python Check ---
-Write-Host "[1/5] Verifying Python Environment..." -NoNewline
+Show-Status "Verifying Python Environment" "WAITING" "Yellow"
 try {
-    $PythonVersion = python --version 2>&1
-    Write-Host " [FOUND: $PythonVersion]" -ForegroundColor DarkCyan
+    Show-Status "Verifying Python Environment ($(python --version 2>&1))" "DONE" "Green"
 } catch {
-    Write-Host " [FAILED]" -ForegroundColor Red
-    Write-Host "ERROR: Python is not installed or not in PATH." -ForegroundColor Yellow
+    Show-Status "Verifying Python Environment" "FAIL" "Red"
+    Write-Host "`n  ERROR: Python is not installed or not in PATH.`n" -BackgroundColor Red -ForegroundColor White
     exit 1
 }
 
-# --- 2. Virtual Environment ---
-Write-Host "[2/5] Managing Virtual Environment (.venv)..." -NoNewline
+# --- 2. Force Cleanup ---
+if ($Force) {
+    Show-Status "Forcing Clean Architecture" "CLEANING" "Yellow"
+    if (Test-Path ".venv") { Remove-Item -Recurse -Force ".venv" }
+    if (Test-Path "cct_memory.db") { Remove-Item "cct_memory.db" }
+    Show-Status "Forcing Clean Architecture" "CLEAN" "Green"
+}
+
+# --- 3. Virtual Environment ---
 if (-not (Test-Path ".venv")) {
-    Write-Host " [CREATING...]" -ForegroundColor Yellow
+    Show-Status "Managing Virtual Environment" "CREATING" "Yellow"
     python -m venv .venv
-    Write-Host "SUCCESS: Virtual environment created." -ForegroundColor Green
+    Show-Status "Managing Virtual Environment" "DONE" "Green"
 } else {
-    Write-Host " [EXISTING]" -ForegroundColor DarkCyan
+    Show-Status "Managing Virtual Environment" "EXISTING" "DarkCyan"
 }
 
-# --- 3. Dependency Installation ---
-Write-Host "[3/5] Syncing Dependencies (requirements.txt)..." -NoNewline
-$VenvPython = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { ".venv/bin/python" }
-
-if (Test-Path "requirements.txt") {
-    Write-Host " [INSTALLING...]" -ForegroundColor Yellow
-    try {
-        & $VenvPython -m pip install --upgrade pip --quiet 2>$null
-    } catch {
-        Write-Host " (Note: Pip upgrade skipped or failed, continuing...)" -ForegroundColor Gray
+# --- 4. Dependencies ---
+if ($SkipDeps) {
+    Show-Status "Syncing Dependencies" "SKIPPED" "Cyan"
+} else {
+    Show-Status "Syncing Dependencies" "SYNCING" "Yellow"
+    $VenvPython = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { ".venv/bin/python" }
+    if (Test-Path "requirements.txt") {
+        & $VenvPython -m pip install --upgrade pip --quiet
+        & $VenvPython -m pip install -r requirements.txt --quiet
+        Show-Status "Syncing Dependencies" "DONE" "Green"
+    } else {
+        Show-Status "Syncing Dependencies" "MISSING" "Red"
     }
-    & $VenvPython -m pip install -r requirements.txt --quiet
-    Write-Host "SUCCESS: 22+ Cognitive Primitives Ready." -ForegroundColor Green
-} else {
-    Write-Host " [MISSING]" -ForegroundColor Red
-    Write-Host "WARNING: requirements.txt not found in project root." -ForegroundColor Yellow
 }
 
-# --- 4. Environment Configuration ---
-Write-Host "[4/5] Auditing Configuration (.env)..." -NoNewline
+# --- 5. Environment ---
+Show-Status "Auditing Configuration (.env)" "AUDITING" "Yellow"
 if (-not (Test-Path ".env")) {
     if (Test-Path ".env.example") {
-        Write-Host " [INITIALIZING FROM EXAMPLE]" -ForegroundColor Yellow
         Copy-Item ".env.example" ".env"
+        Show-Status "Auditing Configuration (.env)" "INITIALIZED" "Green"
     } else {
-        Write-Host " [MISSING .env.example]" -ForegroundColor Red
+        Show-Status "Auditing Configuration (.env)" "FAILED" "Red"
     }
 } else {
-    Write-Host " [VERIFIED]" -ForegroundColor DarkCyan
+    Show-Status "Auditing Configuration (.env)" "VERIFIED" "DarkCyan"
 }
 
-# --- 5. Workspace Integrity ---
-Write-Host "[5/5] Mapping Cognitive Architecture..." -NoNewline
-$RequiredFolders = @("src", "src/engines", "src/modes", "docs")
-$MissingCount = 0
+# --- Finish ---
+Write-Host "`n  SUCCESS  " -NoNewline -BackgroundColor Green -ForegroundColor Black
+Write-Host " Mission Ready: CCT MCP Server is initialized.`n"
 
-foreach ($Folder in $RequiredFolders) {
-    if (-not (Test-Path $Folder)) {
-        Write-Host "`n  MISSING COMPONENT: $Folder" -ForegroundColor Red
-        $MissingCount++
-    }
-}
-
-if ($MissingCount -eq 0) {
-    Write-Host " [STABLE]" -ForegroundColor Green
+if ($Run) {
+    Write-Host "  INFO  " -NoNewline -BackgroundColor Cyan -ForegroundColor Black
+    Write-Host " Launching Cognitive Engine...`n"
+    $VenvPython = if (Test-Path ".venv\Scripts\python.exe") { ".venv\Scripts\python.exe" } else { ".venv/bin/python" }
+    & $VenvPython src/main.py
 } else {
-    Write-Host " [FRAGILE - $MissingCount Missing Components]" -ForegroundColor Yellow
+    Write-Host "  To start the server, run:" -ForegroundColor Gray
+    Write-Host "  .venv\Scripts\python src\main.py`n" -ForegroundColor Cyan
 }
-
-Write-Host "`n--------------------------------------------------------" -ForegroundColor DarkGray
-Write-Host "✅ MISSION READY: CCT MCP Server is initialized." -ForegroundColor Green
-Write-Host "`nTo start the server, run:" -ForegroundColor White
-Write-Host "  .venv\Scripts\python src\main.py" -ForegroundColor Cyan
-Write-Host "`nTo launch Mission Control Dashboard:" -ForegroundColor White
-Write-Host "  .venv\Scripts\streamlit run dashboard.py" -ForegroundColor Cyan
-Write-Host "`n"

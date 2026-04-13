@@ -44,8 +44,9 @@ def _load_translations(language: Language) -> dict[str, str]:
                 _LANGUAGE_CACHE[language] = translations
                 return translations
     except Exception as e:
-        # Fallback to empty dict on error
-        print(f"Error loading localization file for {language}: {e}")
+        # Fallback to empty dict on error - use stderr to avoid protocol corruption
+        import sys
+        print(f"Error loading localization file for {language}: {e}", file=sys.stderr)
     
     return {}
 

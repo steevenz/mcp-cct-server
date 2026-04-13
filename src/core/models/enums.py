@@ -46,6 +46,7 @@ class ThinkingStrategy(str, Enum):
     UNCONVENTIONAL_PIVOT = "unconventional_pivot"
     LONG_TERM_HORIZON = "long_term_horizon"
     MULTI_AGENT_FUSION = "multi_agent_fusion"
+    COUNCIL_OF_CRITICS = "council_of_critics"
 
 class ThoughtType(str, Enum):
     OBSERVATION = "observation"
@@ -72,3 +73,12 @@ class CCTProfile(str, Enum):
     CREATIVE_FIRST = "creative_first"
     CRITICAL_FIRST = "critical_first"
     DEEP_RECURSIVE = "deep_recursive"
+    HUMAN_IN_THE_LOOP = "human_in_the_loop"  # Hard STOP mode for mission-critical ops
+
+class SessionStatus(str, Enum):
+    """Session lifecycle states including HITL clearance checkpoint."""
+    ACTIVE = "active"
+    AWAITING_HUMAN_CLEARANCE = "awaiting_human_clearance"  # HITL hard STOP
+    CLEARED = "cleared"  # Human granted clearance
+    COMPLETED = "completed"
+    ERROR = "error"

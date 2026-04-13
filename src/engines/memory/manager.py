@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional, List
 
 from src.core.models.enums import CCTProfile
 from src.core.models.domain import CCTSessionState, EnhancedThought, GoldenThinkingPattern, AntiPattern
+from src.core.constants import DEFAULT_DB_PATH
 from src.utils.economy import ContextPruner
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class MemoryManager:
     - A threading.Lock serializes all write operations to prevent 'database is locked' errors
       under FastMCP's concurrent async tool handler execution.
     """
-    def __init__(self, db_path: str = "cct_memory.db"):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH):
         # [SECURITY C2] Harden db_path to prevent path traversal attacks.
         # Resolve the absolute path and ensure it stays within the project working directory.
         resolved = os.path.abspath(db_path)
@@ -119,7 +120,15 @@ class MemoryManager:
             conn.commit()
             logger.info(f"SQLite Memory mapped to: {self.db_path}")
 
-    def create_session(self, problem_statement: str, profile: CCTProfile, estimated_thoughts: int) -> CCTSessionState:
+    def create_session(
+        self, 
+        problem_statement: str, 
+        profile: CCTProfile, 
+        estimated_thoughts: int = 5,
+        model_id: Optional[str] = None,
+        suggested_pipeline: Optional[List[ThinkingStrategy]] = None,
+        complexity: str = "unknown"
+    ) -> CCTSessionState:
         session_id = f"session_{uuid.uuid4().hex[:8]}"
         
         # [SECURITY H2] Generate a cryptographically random bearer token for this session.
@@ -133,6 +142,9 @@ class MemoryManager:
             current_thought_number=0,
             estimated_total_thoughts=estimated_thoughts,
             session_token=session_token,
+            model_id=model_id if model_id else "claude-3-5-sonnet-20240620",
+            suggested_pipeline=suggested_pipeline or [],
+            complexity=complexity
         )
         
         with self._write_lock:
@@ -180,7 +192,7 @@ class MemoryManager:
 
     def save_thought(self, session_id: str, thought: EnhancedThought) -> None:
         """
-        Saves a thought and updates session history atomically.
+        Saves a new thought and updates session history atomically.
         Uses explicit transaction to ensure consistency.
         """
         with self._write_lock:
@@ -207,13 +219,31 @@ class MemoryManager:
                         logger.warning(f"Attempted to save thought to non-existent session: {session_id}")
 
                     conn.commit()
-                except Exception:
+                except sqlite3.Error as e:
                     conn.rollback()
+                    logger.error(f"Failed to save thought {thought.id}: {e}")
                     raise
 
-        # [M2] Audit log: thought written
-        _audit_log("THOUGHT_SAVE", thought.id, f"session={session_id} strategy={thought.strategy.value}")
-        logger.debug(f"Saved thought {thought.id} to SQLite session {session_id}")
+    def update_thought(self, session_id: str, thought: EnhancedThought) -> None:
+        """
+        Updates an existing thought node in the database.
+        """
+        with self._write_lock:
+            with self._get_connection() as conn:
+                try:
+                    conn.execute(
+                        "UPDATE thoughts SET data = ? WHERE thought_id = ? AND session_id = ?",
+                        (thought.model_dump_json(), thought.id, session_id)
+                    )
+                    conn.commit()
+                except sqlite3.Error as e:
+                    conn.rollback()
+                    logger.error(f"Failed to update thought {thought.id}: {e}")
+                    raise
+
+        # [M2] Audit log: thought updated
+        _audit_log("THOUGHT_UPDATE", thought.id, f"session={session_id} strategy={thought.strategy.value}")
+        logger.debug(f"Updated thought {thought.id} in SQLite session {session_id}")
 
     def get_thought(self, thought_id: str) -> Optional[EnhancedThought]:
         with self._get_connection() as conn:
@@ -240,8 +270,20 @@ class MemoryManager:
                 thought = EnhancedThought.model_validate_json(row[0])
                 thoughts_dict[thought.id] = thought
                 
-        # Return the thoughts in the exact chronological order stored in history_ids
-        return [thoughts_dict[tid] for tid in session.history_ids if tid in thoughts_dict]
+        history_set = set(session.history_ids)
+        ordered: List[EnhancedThought] = []
+
+        for tid in session.history_ids:
+            thought = thoughts_dict.get(tid)
+            if thought:
+                ordered.append(thought)
+
+        remaining = [t for tid, t in thoughts_dict.items() if tid not in history_set]
+        remaining.sort(key=lambda t: (t.sequential_context.thought_number, t.timestamp))
+
+        if ordered:
+            return ordered + remaining
+        return remaining
 
 
     def save_thinking_pattern(self, pattern: GoldenThinkingPattern):
@@ -336,3 +378,46 @@ class MemoryManager:
             "thinking_patterns": relevant_patterns,
             "anti_patterns": relevant_failures
         }
+
+    def get_all_thinking_patterns(self) -> List[Dict[str, Any]]:
+        """
+        Retrieve all thinking patterns as raw dictionaries.
+        Used by PatternInjector for automatic Phase 0 injection.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT data FROM thinking_patterns ORDER BY rowid DESC")
+            return [json.loads(row[0]) for row in cursor.fetchall()]
+
+    def get_all_anti_patterns(self) -> List[Dict[str, Any]]:
+        """
+        Retrieve all anti-patterns as raw dictionaries.
+        Used by PatternInjector for automatic Phase 0 injection.
+        """
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT data FROM anti_patterns ORDER BY rowid DESC")
+            return [json.loads(row[0]) for row in cursor.fetchall()]
+
+    def delete_session(self, session_id: str) -> bool:
+        """
+        Purges a session and all its associated thoughts from the database.
+        [SECURITY M2] Logged in the forensic audit trail.
+        """
+        with self._write_lock:
+            with self._get_connection() as conn:
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                    # 1. Delete associated thoughts first (manual cascade)
+                    conn.execute("DELETE FROM thoughts WHERE session_id = ?", (session_id,))
+                    # 2. Delete the session itself
+                    cursor = conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                    success = cursor.rowcount > 0
+                    conn.commit()
+                except sqlite3.Error as e:
+                    conn.rollback()
+                    logger.error(f"Failed to delete session {session_id}: {e}")
+                    return False
+        
+        if success:
+            _audit_log("SESSION_DELETE", session_id)
+            logger.info(f"Session {session_id} and its history purged.")
+        return success

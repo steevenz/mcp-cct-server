@@ -1,3 +1,11 @@
+---
+title: "The Constitution: Core Directives & Arsenal"
+tags: ["governance", "rules", "directives", "cct"]
+importance: 100
+maturity: "core"
+updatedAt: "2026-04-13T02:51:00Z"
+---
+
 # THE CONSTITUTION: CORE DIRECTIVES & ARSENAL
 
 This document defines the "Laws of Physics" for all CCT-powered interactions. Adherence is mandatory and immutable.

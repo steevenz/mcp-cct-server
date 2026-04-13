@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field
 
-from .enums import ThinkingStrategy, ThoughtType, ConfidenceLevel, CCTProfile
+from .enums import ThinkingStrategy, ThoughtType, ConfidenceLevel, CCTProfile, SessionStatus
 from .contexts import SequentialContext
 
 def utc_now() -> datetime:
@@ -11,12 +11,27 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 class ThoughtMetrics(BaseModel):
-    """Quality metrics for a generated thought."""
+    """Granular performance and cost metrics for a single cognitive step."""
+    # Quality metrics
     clarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
     logical_coherence: float = Field(default=0.0, ge=0.0, le=1.0)
     evidence_strength: float = Field(default=0.0, ge=0.0, le=1.0)
     novelty_score: float = Field(default=0.0, ge=0.0, le=1.0)
     confidence_level: ConfidenceLevel = Field(default=ConfidenceLevel.MEDIUM)
+    
+    # Token & Cost Metrics (Transparency Layer)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    input_cost_usd: float = Field(default=0.0)
+    output_cost_usd: float = Field(default=0.0)
+    input_cost_idr: float = Field(default=0.0)
+    output_cost_idr: float = Field(default=0.0)
+    
+    # Audit: snapshot of the live exchange rate used at calculation time
+    currency_rate_idr: float = Field(
+        default=0.0,
+        description="USD/IDR exchange rate used for this calculation (from live API / cache)"
+    )
 
 class EnhancedThought(BaseModel):
     """Main thought entity structure within the system (Universal Currency)."""
@@ -62,9 +77,17 @@ class CCTSessionState(BaseModel):
     estimated_total_thoughts: int = Field(default=5)
     history_ids: List[str] = Field(default_factory=list)
     requires_human_decision: bool = Field(default=False)
-    status: str = Field(default="active")  # active, converging, completed
+    status: SessionStatus = Field(default=SessionStatus.ACTIVE)
     suggested_pipeline: List[ThinkingStrategy] = Field(default_factory=list)
     knowledge_injection: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=utc_now)
+    
+    # Multi-Scenario Context
+    detected_categories: Dict[str, float] = Field(
+        default_factory=dict, 
+        description="Weighted scores for applicable domains (e.g., {'ARCH': 0.8, 'SEC': 0.4})"
+    )
+    primary_category: str = Field(default="GENERIC")
     
     # [SECURITY H2] Bearer token for session ownership verification.
     # Issued on creation, must be passed on all subsequent read operations.
@@ -83,7 +106,13 @@ class CCTSessionState(BaseModel):
     total_prompt_tokens: int = Field(default=0)
     total_completion_tokens: int = Field(default=0)
     total_cost_usd: float = Field(default=0.0)
+    total_cost_idr: float = Field(default=0.0)
     consistency_score: float = Field(default=0.0)
+    complexity: str = Field(default="unknown")
+    
+    @property
+    def total_tokens(self) -> int:
+        return self.total_prompt_tokens + self.total_completion_tokens
 
 class GoldenThinkingPattern(BaseModel):
     """Archived high-quality cognitive patterns (Permanent Thinking Patterns)."""

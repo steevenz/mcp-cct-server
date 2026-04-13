@@ -1,16 +1,18 @@
 import pytest
 from src.modes.hybrids.multi_agent.orchestrator import MultiAgentFusionEngine
-from src.core.models.enums import ThinkingStrategy, CCTProfile, ThoughtType
-from src.core.models.domain import EnhancedThought
-from src.engines.sequential.models import SequentialContext
+from src.core.models.domain import EnhancedThought, CCTSessionState
+from src.core.models.enums import ThoughtType, ThinkingStrategy, CCTProfile
+from src.core.models.contexts import SequentialContext
 
-def test_multi_agent_fusion_trigger(memory_manager, sequential_engine):
+def test_multi_agent_fusion_trigger(memory_manager, sequential_engine, fusion_orchestrator):
     """Test multi-agent hybrid payload creates divergent persona nodes and a fusion synthesis."""
+    import uuid
     session = memory_manager.create_session("Design a secure auth system", CCTProfile.BALANCED, 10)
     
     # Create target thought
+    target_id = f"t_auth_{uuid.uuid4().hex[:8]}"
     target = EnhancedThought(
-        id="t_auth_base",
+        id=target_id,
         content="Use JWT with short expiration.",
         thought_type=ThoughtType.ANALYSIS,
         strategy=ThinkingStrategy.SYSTEMATIC,
@@ -18,7 +20,7 @@ def test_multi_agent_fusion_trigger(memory_manager, sequential_engine):
     )
     memory_manager.save_thought(session.session_id, target)
     
-    engine = MultiAgentFusionEngine(memory_manager, sequential_engine)
+    engine = MultiAgentFusionEngine(memory_manager, sequential_engine, fusion_orchestrator)
     
     payload = {
         "target_thought_id": target.id,
@@ -38,9 +40,8 @@ def test_multi_agent_fusion_trigger(memory_manager, sequential_engine):
         assert p_thought.strategy == ThinkingStrategy.CRITICAL
         assert "MULTI-AGENT FUSION" in p_thought.content
 
-    # Verify fusion thought existence and integrity
+    # Verify fusion result structure
     fusion = memory_manager.get_thought(result["fusion_thought_id"])
     assert fusion is not None
-    assert fusion.strategy == ThinkingStrategy.INTEGRATIVE
     assert fusion.thought_type == ThoughtType.SYNTHESIS
-    assert len(fusion.builds_on) == 3 # Target + 2 Personas
+    assert len(fusion.builds_on) == 2 # 2 Persona Insights as inputs

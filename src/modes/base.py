@@ -1,12 +1,17 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TypeVar, Type
 import uuid
 from datetime import datetime
 
+from pydantic import BaseModel, ValidationError
 from src.core.models.enums import ThinkingStrategy
 from src.core.models.domain import CCTSessionState, EnhancedThought
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
+from src.analysis.scoring_engine import ScoringEngine
+from src.core.validators import validate_session_id
+
+SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 class BaseCognitiveEngine(ABC):
     """
@@ -17,6 +22,7 @@ class BaseCognitiveEngine(ABC):
     def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine):
         self.memory = memory_manager
         self.sequential = sequential_engine
+        self.scoring = ScoringEngine()
 
     @property
     @abstractmethod
@@ -69,3 +75,36 @@ class BaseCognitiveEngine(ABC):
         if not thought:
             raise ValueError(f"Thought '{thought_id}' not found.")
         return thought
+
+    def _validate_session_id(self, session_id: str) -> None:
+        error = validate_session_id(session_id)
+        if error:
+            raise ValueError(error)
+
+    def _validate_payload(self, payload: Dict[str, Any], schema: Type[SchemaT]) -> SchemaT:
+        try:
+            return schema(**payload)
+        except (ValidationError, TypeError) as exc:
+            raise ValueError(f"Invalid payload for {self.__class__.__name__}: {exc}") from exc
+
+    def _link_thought_to_parent(self, session_id: str, thought: EnhancedThought) -> None:
+        if not thought.parent_id:
+            return
+        parent = self.memory.get_thought(thought.parent_id)
+        if not parent:
+            return
+        if thought.id not in parent.children_ids:
+            parent.children_ids.append(thought.id)
+            self.memory.update_thought(session_id, parent)
+
+    def _score_and_save(
+        self,
+        session_id: str,
+        thought: EnhancedThought,
+        history: list[EnhancedThought],
+        model_id: str,
+    ) -> None:
+        thought.metrics = self.scoring.analyze_thought(thought, history, model_id=model_id)
+        thought.summary = self.scoring.generate_summary(thought.content)
+        self.memory.save_thought(session_id, thought)
+        self._link_thought_to_parent(session_id, thought)

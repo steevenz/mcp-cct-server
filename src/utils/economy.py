@@ -1,6 +1,11 @@
 import logging
 from typing import List, Dict, Optional
 from src.core.models.domain import EnhancedThought, CCTSessionState
+from src.core.constants import (
+    DEFAULT_SLIDING_WINDOW_SIZE,
+    DEFAULT_SUMMARY_DEPTH_THRESHOLD,
+)
+from src.analysis.summarization import ContextCompressor, CompressionResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +34,10 @@ class ContextPruner:
             return ContextPruner._filter_active_path(full_history, target_thought_id)
 
         if strategy == "summarized":
-            return ContextPruner._summarize_distant_history(full_history, target_thought_id, depth_threshold=3)
+            return ContextPruner._summarize_distant_history(full_history, target_thought_id)
 
         if strategy == "sliding":
-            return full_history[-8:] # Keep last 8 thoughts
+            return full_history[-DEFAULT_SLIDING_WINDOW_SIZE:] # Keep last N thoughts
 
         return full_history
 
@@ -59,12 +64,16 @@ class ContextPruner:
     def _summarize_distant_history(
         history: List[EnhancedThought], 
         current_id: Optional[str],
-        depth_threshold: int = 3
+        depth_threshold: int = DEFAULT_SUMMARY_DEPTH_THRESHOLD,
+        token_budget: int = 4000
     ) -> List[EnhancedThought]:
         """
         For thoughts deeper than the threshold from the target, replace content with summary.
+        
+        Enhanced with Recursive Summarization from ContextCompressor for better
+        token economy while maintaining semantic coherence.
         """
-        if not current_id:
+        if not current_id or len(history) <= depth_threshold:
             return history
             
         # 1. Map distance from current_id
@@ -78,21 +87,79 @@ class ContextPruner:
             node = thought_map.get(ptr)
             ptr = node.parent_id if node else None
             dist += 1
-            
-        # 2. Reconstruct history with summaries
-        optimized_history = []
+        
+        # 2. Split into recent (preserve) and distant (compress)
+        recent_thoughts = []
+        distant_thoughts = []
+        
         for t in history:
-            dist = distance_map.get(t.id, 999) # If not in active path, treat as far
-            
-            if dist > depth_threshold:
-                # Optimized: swap content for summary if available
-                new_thought = t.model_copy()
-                if new_thought.summary:
-                    new_thought.content = f"[SUMMARY] {new_thought.summary}"
-                    # Mark as optimized to save tokens
-                    new_thought.tags.append("context_optimized")
-                optimized_history.append(new_thought)
+            dist = distance_map.get(t.id, 999)
+            if dist <= depth_threshold:
+                recent_thoughts.append(t)
             else:
-                optimized_history.append(t)
+                distant_thoughts.append(t)
+        
+        # 3. Use ContextCompressor for recursive summarization of distant thoughts
+        if distant_thoughts:
+            compressor = ContextCompressor(
+                max_tokens_budget=token_budget,
+                preserve_recent_n=0,  # We handle preservation manually
+                compression_threshold=1000
+            )
+            
+            compression_result = compressor.compress_context(distant_thoughts)
+            
+            logger.info(
+                f"[ContextPruner] Compressed {compression_result.thoughts_summarized} "
+                f"thoughts: {compression_result.original_tokens} → "
+                f"{compression_result.compressed_tokens} tokens "
+                f"({compression_result.compression_ratio:.1%} ratio)"
+            )
+            
+            # Create a synthetic summary thought
+            if compression_result.summary:
+                from datetime import datetime, timezone
+                import uuid
                 
-        return optimized_history
+                summary_thought = EnhancedThought(
+                    id=f"summary_{uuid.uuid4().hex[:8]}",
+                    content=compression_result.summary,
+                    summary="Recursive compression of distant context",
+                    parent_id=distant_thoughts[0].parent_id if distant_thoughts else None,
+                    strategy="compression",
+                    thought_type="summary",
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    tags=["context_optimized", "recursive_summary"],
+                    depth=-1,  # Meta-thought
+                    branch_id=None,
+                    metrics=distant_thoughts[-1].metrics if distant_thoughts else None
+                )
+                
+                # Combine: recent thoughts + summary meta-thought
+                optimized_history = distant_thoughts[:1] + [summary_thought] + recent_thoughts
+                return optimized_history
+        
+        # Fallback: return original if no compression needed
+        return history
+    
+    @staticmethod
+    def prune_with_compression(
+        session_state: CCTSessionState,
+        full_history: List[EnhancedThought],
+        token_budget: int = 4000
+    ) -> CompressionResult:
+        """
+        Advanced pruning using recursive summarization.
+        
+        Returns compression metrics along with optimized history.
+        """
+        compressor = ContextCompressor(max_tokens_budget=token_budget)
+        result = compressor.compress_context(full_history)
+        
+        logger.info(
+            f"[ContextPruner] Session {session_state.session_id}: "
+            f"Compressed {result.thoughts_summarized} thoughts, "
+            f"ratio: {result.compression_ratio:.1%}"
+        )
+        
+        return result

@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 from src.core.models.domain import ThoughtMetrics, EnhancedThought
 from src.core.models.enums import ThoughtType, ThinkingStrategy, ConfidenceLevel
-from src.engines.sequential.models import SequentialContext
+from src.core.models.contexts import SequentialContext
 
 def test_thought_metrics_constraints():
     """Test that metrics fall exactly within the 0.0 - 1.0 bounds logic."""

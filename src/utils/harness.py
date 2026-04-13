@@ -1,7 +1,13 @@
 import json
-import os
 from typing import Dict, Any, Optional
 from pathlib import Path
+
+from src.core.constants import (
+    DEFAULT_PRICING_PATH,
+    DEFAULT_MODEL,
+    FALLBACK_INPUT_PRICE_PER_1M,
+    FALLBACK_OUTPUT_PRICE_PER_1M,
+)
 
 class TokenHarness:
     """
@@ -9,45 +15,87 @@ class TokenHarness:
     Supports multi-model pricing via external JSON registry.
     """
     
-    DEFAULT_PRICING_PATH = Path("datasets/pricing.json")
-    DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
+    DEFAULT_PRICING_PATH = Path(DEFAULT_PRICING_PATH)
+    DEFAULT_MODEL = DEFAULT_MODEL
 
     def __init__(self, pricing_path: Optional[str] = None):
         self.pricing_path = Path(pricing_path) if pricing_path else self.DEFAULT_PRICING_PATH
         self.registry = self._load_registry()
 
     def _load_registry(self) -> Dict[str, Any]:
-        """Loads the pricing registry from JSON file."""
+        """Loads the pricing registry from directory containing per-model JSON files."""
+        registry = {}
         try:
-            if not self.pricing_path.exists():
-                # Fallback to absolute path from project root if relative fails
-                root_path = Path(__file__).parent.parent.parent / self.pricing_path
-                if root_path.exists():
-                    with open(root_path, "r", encoding="utf-8") as f:
-                        return json.load(f)
+            pricing_dir = self.pricing_path
+            
+            # Fallback to absolute path from project root if relative fails
+            if not pricing_dir.exists():
+                pricing_dir = Path(__file__).parent.parent.parent / self.pricing_path
+            
+            if not pricing_dir.exists():
                 return {}
             
-            with open(self.pricing_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+            # Load all JSON files from the pricing directory
+            for json_file in pricing_dir.glob("*.json"):
+                try:
+                    with open(json_file, "r", encoding="utf-8") as f:
+                        model_data = json.load(f)
+                        model_id = model_data.get("model_id")
+                        if model_id:
+                            registry[model_id] = model_data
+                except Exception as e:
+                    # Skip invalid files
+                    continue
+                    
+            return registry
         except Exception:
             return {}
 
+    def get_model_pricing(self, model_id: str) -> Dict[str, Any]:
+        """
+        Retrieves pricing data for a specific model.
+        Falls back to default model if not found.
+        """
+        # Try exact match first
+        if model_id in self.registry:
+            return self.registry[model_id]
+        
+        # Try partial match (e.g., "claude-3-5-sonnet" matches "claude-3-5-sonnet-20240620")
+        for registered_id, data in self.registry.items():
+            if model_id in registered_id or registered_id in model_id:
+                return data
+        
+        # Fall back to default model
+        return self.registry.get(self.DEFAULT_MODEL, {})
+
     def calculate_cost(self, model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
         """
-        Calculates the cost in USD based on model pricing.
+        Calculates the cost in USD based on model-specific pricing.
         Cost = (PromptTokens * InputPrice / 1M) + (CompletionTokens * OutputPrice / 1M)
+        
+        Args:
+            model_id: The AI model identifier (e.g., "claude-3-5-sonnet-20240620")
+            prompt_tokens: Number of input tokens
+            completion_tokens: Number of output tokens
+            
+        Returns:
+            Calculated cost in USD
         """
-        model_data = self.registry.get(model_id, self.registry.get(self.DEFAULT_MODEL))
+        model_data = self.get_model_pricing(model_id)
         
         if not model_data:
             # Absolute baseline fallback if registry is empty
-            return (prompt_tokens * 3.0 / 1_000_000) + (completion_tokens * 15.0 / 1_000_000)
+            return (prompt_tokens * FALLBACK_INPUT_PRICE_PER_1M / 1_000_000) + (completion_tokens * FALLBACK_OUTPUT_PRICE_PER_1M / 1_000_000)
 
-        in_price = model_data.get("input_price_per_1m", 3.0)
-        out_price = model_data.get("output_price_per_1m", 15.0)
+        in_price = model_data.get("input_price_per_1m", FALLBACK_INPUT_PRICE_PER_1M)
+        out_price = model_data.get("output_price_per_1m", FALLBACK_OUTPUT_PRICE_PER_1M)
 
         cost = (prompt_tokens * in_price / 1_000_000) + (completion_tokens * out_price / 1_000_000)
         return round(cost, 6)
+
+    def is_model_supported(self, model_id: str) -> bool:
+        """Check if a model has pricing data available."""
+        return bool(self.get_model_pricing(model_id))
 
     def get_efficiency_metrics(self, session_state: Any) -> Dict[str, Any]:
         """

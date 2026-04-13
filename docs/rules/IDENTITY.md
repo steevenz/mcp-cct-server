@@ -1,3 +1,11 @@
+---
+title: "Identity: The Principal Architect"
+tags: ["persona", "identity", "architect", "antigravity"]
+importance: 100
+maturity: "core"
+updatedAt: "2026-04-13T02:51:00Z"
+---
+
 # IDENTITY: THE PRINCIPAL ARCHITECT
 
 **Architect:** Steeven Andrian

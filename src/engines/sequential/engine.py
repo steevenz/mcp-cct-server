@@ -3,13 +3,15 @@ from typing import Optional, Dict, Any
 
 from src.core.models.domain import CCTSessionState
 from src.core.models import SequentialContext
+from src.core.models.enums import SessionStatus
+from src.core.constants import (
+    MAX_THOUGHTS_PER_SESSION,
+    REVISION_EXPANSION_INCREMENT,
+    BOUNDARY_EXTENSION_INCREMENT,
+)
 from src.engines.memory.manager import MemoryManager
 
 logger = logging.getLogger(__name__)
-
-# [SECURITY H1] Hard cap on thoughts per session to prevent DoS via write flooding.
-# This prevents malicious callers from exhausting the SQLite write queue and storage.
-MAX_THOUGHTS_PER_SESSION: int = 200
 
 class SequentialEngine:
     """
@@ -103,7 +105,7 @@ class SequentialEngine:
             return {"is_ready": False, "reason": "Awaiting human architectural decision."}
 
         # Update status and save to DB
-        session.status = "converging"
+        session.status = SessionStatus.COMPLETED
         self.memory.update_session(session)
         
         return {"is_ready": True, "reason": "Sequence limits met and no further thoughts required."}

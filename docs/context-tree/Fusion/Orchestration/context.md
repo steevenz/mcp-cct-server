@@ -1,13 +1,24 @@
-# Topic: Orchestration
+---
+title: "Fusion: Convergent Orchestration"
+tags: ["fusion", "orchestration", "synthesis"]
+keywords: ["orchestrator", "convergent", "consensus", "high-density"]
+importance: 85
+recency: 1.0
+maturity: "validated"
+createdAt: "2026-04-12T18:00:00Z"
+updatedAt: "2026-04-12T18:00:00Z"
+---
+
+# Topic: Convergent Orchestration
 
 ## Overview
-Fusion Orchestration is the process of coordinating multiple divergent thoughts into a single synthesized outcome. It acts as the convergent hub of the CCT server, managing the lifecycle of integrated reasoning nodes.
+Convergent Orchestration serves as the **synthesis engine** of the CCT Framework. Its primary goal is to resolve complexity by merging multiple independent cognitive paths into a single, high-density conclusion. This prevents information overload and focuses the reasoning output.
 
 ## Key Concepts
-- **Synthesis Logic**: The heuristic or LLM-driven merging of thought content.
-- **Cognitive Gain**: The measurable improvement in coherence and evidence strength between input and output thoughts.
-- **Thought Grafting**: The process of linking constituent thoughts as 'builds_on' dependencies for the new synthesis node.
+- **Cognitive Consensus**: Merging thoughts from multiple personas (e.g., Creator and Critic) to identify common ground and resolve contradictions.
+- **Evidence-Tiered Synthesis**: Using precise, high-tier LLM models for final synthesis steps while using efficiency-tier models for intermediate grouping.
+- **Synthesis Anchoring**: Ensuring the final fused node is anchored to the original problem statement (session goal).
 
 ## Related Topics
-- [Dynamic Routing](../Routing/context.md)
-- [Multi-Agent Orchestrator](../../CCT/context.md)
+- [Synthesis Logic](synthesis-logic.md)
+- [../context.md](../context.md)

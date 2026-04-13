@@ -4,15 +4,17 @@ from src.core.models.enums import ThinkingStrategy, CCTProfile
 
 def test_long_term_horizon_trigger(memory_manager, sequential_engine):
     """Test standard long-term horizon payload triggers a scale projection."""
+    import uuid
     session = memory_manager.create_session("Implement Monolithic DB", CCTProfile.BALANCED, 5)
     
     # Generate mock parent
-    from src.core.models.domain import EnhancedThought
-    from src.engines.sequential.models import SequentialContext
-    from src.core.models.enums import ThoughtType
+    from src.core.models.domain import EnhancedThought, CCTSessionState
+    from src.core.models.enums import ThoughtType, ThinkingStrategy
+    from src.core.models.contexts import SequentialContext
     
+    target_id = f"tt_arch_{uuid.uuid4().hex[:8]}"
     target = EnhancedThought(
-        id="tt_arch_1",
+        id=target_id,
         content="We will dump everything into Postgres.",
         thought_type=ThoughtType.ANALYSIS,
         strategy=ThinkingStrategy.SYSTEMATIC,
@@ -39,9 +41,10 @@ def test_long_term_horizon_trigger(memory_manager, sequential_engine):
     assert "5_years" in prompt.content
 
 def test_long_term_horizon_invalid_target(memory_manager, sequential_engine):
-    """Test schema payload rejection for non-existent target."""
-    session = memory_manager.create_session("Test", CCTProfile.BALANCED, 3)
+    """Test that invalid target thought raises ValueError."""
+    session = memory_manager.create_session("Test", CCTProfile.BALANCED, 5)
+    
     engine = LongTermHorizonEngine(memory_manager, sequential_engine)
     
-    with pytest.raises(ValueError, match="Target thought 'not_real' not found"):
+    with pytest.raises(ValueError, match="Thought 'not_real' not found"):
         engine.execute(session.session_id, {"target_thought_id": "not_real"})

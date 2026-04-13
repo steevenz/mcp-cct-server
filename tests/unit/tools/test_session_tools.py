@@ -62,7 +62,8 @@ def test_get_thinking_path_not_found(mcp_and_orchestrator):
     orchestrator.memory.get_session.return_value = None
     
     result = tool_func("ghost")
-    assert result == {"error": "session_not_found"}
+    assert result["error"] == "session_not_found"
+    assert result["status"] == "error"
 
 def test_suggest_cognitive_pipeline_tool(mcp_and_orchestrator):
     mcp, orchestrator = mcp_and_orchestrator

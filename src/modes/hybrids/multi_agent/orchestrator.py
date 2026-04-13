@@ -75,7 +75,7 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
             session.current_thought_number += 1
 
         # Save updated target with all persona children
-        self.memory.save_thought(session_id, target_thought)
+        self.memory.update_thought(session_id, target_thought)
         self.memory.update_session(session)
 
         # 2. PHASE: Convergent Synthesis (The Fusion)
@@ -86,6 +86,7 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
             session_id=session_id,
             thought_ids=[n.id for n in persona_nodes],
             synthesis_goal=synthesis_goal,
+            model_id=session.model_id,
             model_tier="efficiency" # [CHEAP/FAST] logic applied here
         )
 

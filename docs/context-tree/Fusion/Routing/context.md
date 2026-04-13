@@ -1,13 +1,24 @@
-# Topic: Routing
+---
+title: "Fusion: Dynamic Cognitive Routing"
+tags: ["fusion", "routing", "pipeline"]
+keywords: ["router", "adaptive", "pivot", "path-selection"]
+importance: 85
+recency: 1.0
+maturity: "validated"
+createdAt: "2026-04-12T18:00:00Z"
+updatedAt: "2026-04-12T18:00:00Z"
+---
+
+# Topic: Cognitive Routing
 
 ## Overview
-Fusion Routing (The Automatic Pipeline) is the dynamic decision-making layer that selects the most efficient thinking strategy for a given session. It monitors real-time scoring data to determine when to stick to a strategy or pivot to a more complex one.
+Cognitive Routing is the **adaptive pathfinder** for the CCT server. It implements the "Automatic Pipeline" by monitoring real-time quality metrics and deciding whether to proceed with a planned sequence or pivot to an alternative strategy to resolve intellectual stagnation.
 
 ## Key Concepts
-- **Automatic Pipeline**: The logic that maps problem types to initial strategies.
-- **Dynamic Pivoting**: The self-correcting mechanism that swaps engines mid-session based on low quality scores.
-- **Pivot Thresholds**: Configurable scoring benchmarks (e.g. coherence < 0.6) that trigger a strategy change.
+- **Adaptive Pivoting**: Detecting quality drops (Clarity/Coherence < 0.4) and automatically rerouting the session through unconventional strategies.
+- **Pipeline Optimization**: Selecting the initial thinking strategy based on a semantic analysis of the user's problem statement.
+- **Early Convergence**: Recognizing when the problem is solved early and terminating the cycle to preserve tokens and time.
 
 ## Related Topics
-- [Fusion Orchestration](../Orchestration/context.md)
-- [Scoring Engine](../../Analysis/context.md)
+- [Pivoting Heuristics](pivoting-heuristics.md)
+- [../automatic_routing.md](../automatic-routing.md)

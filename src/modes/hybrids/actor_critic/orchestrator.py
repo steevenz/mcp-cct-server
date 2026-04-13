@@ -115,7 +115,7 @@ class ActorCriticEngine(BaseCognitiveEngine):
 
         # Update the original thought's children to maintain tree integrity
         target_thought.children_ids.append(critic_thought.id)
-        self.memory.save_thought(session_id, target_thought)
+        self.memory.update_thought(session_id, target_thought)
 
         logger.info(f"Actor-Critic loop completed. Synthesis ID: {synthesis_thought.id}")
 

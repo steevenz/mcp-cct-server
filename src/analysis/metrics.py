@@ -10,6 +10,7 @@ import random
 import re
 from collections import Counter
 from typing import List, Tuple
+from src.utils.tokenizer import count_tokens
 
 
 # Compile regex once for performance
@@ -26,7 +27,10 @@ def _cached_tokenize(text: str) -> Tuple[str, ...]:
 
 
 def _tokenize(text: str) -> list[str]:
-    """Public interface - returns list for backward compatibility."""
+    """
+    [DEPRECATED] Use count_tokens for counting. 
+    Kept for backward compatibility in similarity calculations.
+    """
     return list(_cached_tokenize(text))
 
 
