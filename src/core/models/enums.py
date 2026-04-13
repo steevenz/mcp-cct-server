@@ -3,9 +3,9 @@ from enum import Enum
 class ThinkingStrategy(str, Enum):
     """List of available thinking strategies."""
     
-    # --- Primitive Modes (The Workers) ---
+    # Primitive Modes (The Workers)
     LINEAR = "linear"
-    TREE = "tree"
+    # TREE = "tree" -> Refactored into TREE_OF_THOUGHTS
     DIALECTICAL = "dialectical"
     SYSTEMATIC = "systematic"
     CREATIVE = "creative"
@@ -34,7 +34,18 @@ class ThinkingStrategy(str, Enum):
     ANALOGICAL_TRANSFER = "analogical_transfer"
     ADVERSARIAL_SIMULATION = "adversarial_simulation"
     DEDUCTIVE_VALIDATION = "deductive_validation"
-    SYNTHESIS = "synthesis" # Adding synthesis as a strategy if it's used as a step
+    SYNTHESIS = "synthesis" 
+    
+    # --- Agent Planning Strategies (from agent-planning-skill) ---
+    REACT = "react"
+    REWOO = "rewoo"
+    TREE_OF_THOUGHTS = "tree_of_thoughts"
+    PLAN_AND_EXECUTE = "plan_and_execute"
+    CHAIN_OF_THOUGHT = "chain_of_thought"
+    ENGINEERING_DECONSTRUCTION = "engineering_deconstruction"
+    SELF_DEBUGGING = "self_debugging"
+    BRAINSTORMING = "brainstorming"
+    POST_MISSION_LEARNING = "post_mission_learning"
     
     # Strategic & Business Primitives
     SWOT_ANALYSIS = "swot_analysis"
@@ -60,6 +71,10 @@ class ThoughtType(str, Enum):
     PLAN = "plan"
     IMPLEMENTATION = "implementation"
     REVIEW = "review"
+    REQUIREMENT = "requirement"
+    CRITERIA = "criteria"
+    ROOT_CAUSE = "root_cause"
+    INTROSPECTION = "introspection"
 
 class ConfidenceLevel(int, Enum):
     VERY_LOW = 1

@@ -35,6 +35,52 @@ class SkillsLoader:
         ThinkingStrategy.FIRST_PRINCIPLES: [
             ActionSkill("ConstraintSolver", "Identifying and isolating irreducible system constraints.", []),
             ActionSkill("AssumptionAudit", "Deconstructing complex problems into validated facts.", [])
+        ],
+        ThinkingStrategy.REACT: [
+            ActionSkill("DynamicReasoning", "Thought-Action-Observation loop for adaptive tasks.", ["search_web", "read_url_content"]),
+            ActionSkill("AdaptiveExecution", "Adjusting plans in real-time based on environmental feedback.", [])
+        ],
+        ThinkingStrategy.REWOO: [
+            ActionSkill("PredictivePlanning", "Upfront logical dependency mapping for efficiency.", []),
+            ActionSkill("ParallelExecution", "Identifying tasks that can be run concurrently.", [])
+        ],
+        ThinkingStrategy.TREE_OF_THOUGHTS: [
+            ActionSkill("BranchingLogic", "Exploring multiple reasoning paths simultaneously.", []),
+            ActionSkill("PathEvaluation", "Scoring and pruning reasoning branches based on coherence.", [])
+        ],
+        ThinkingStrategy.PLAN_AND_EXECUTE: [
+            ActionSkill("StructuredDecomposition", "Breaking complex tasks into manageable sub-goals.", []),
+            ActionSkill("SequentialExecution", "Maintaining state across multi-step technical workflows.", [])
+        ],
+        ThinkingStrategy.CHAIN_OF_THOUGHT: [
+            ActionSkill("TransparentReasoning", "Step-by-step logical decomposition for human auditability.", []),
+            ActionSkill("LogicalValidation", "Ensuring each reasoning step follows from the previous.", [])
+        ],
+        ThinkingStrategy.ENGINEERING_DECONSTRUCTION: [
+            ActionSkill("EvalArchitect", "Defining capability and regression evals before implementation.", []),
+            ActionSkill("TaskDecomposer", "Applying the 15-minute unit rule to break down complex tasks.", []),
+            ActionSkill("ModelRouter", "Optimizing performance by routing tasks to Haiku, Sonnet, or Opus tiers.", ["get_health"])
+        ],
+        ThinkingStrategy.SELF_DEBUGGING: [
+            ActionSkill("FailureCapture", "Recording error logs, tool sequences, and context pressure snapshot.", []),
+            ActionSkill("RootCauseDiagnostician", "Identifying the logical or state failure patterns behind errors.", []),
+            ActionSkill("ContainedRecoverer", "Executing minimal, safe recovery actions to break loops or drift.", []),
+            ActionSkill("IntrospectionReporter", "Producing human-readable debug logs for audit and future learning.", [])
+        ],
+        ThinkingStrategy.BRAINSTORMING: [
+            ActionSkill("SocraticGate", "Mandating 3 clarifying questions for vague or complex tasks.", []),
+            ActionSkill("DynamicQuestioner", "Generating high-leverage architectural questions vs static templates.", []),
+            ActionSkill("StatusReporter", "Using visual scan icons (✅🔄⏳❌) for mission transparency.", [])
+        ],
+        ThinkingStrategy.POST_MISSION_LEARNING: [
+            ActionSkill("InstinctExtractor", "Extracting atomic learned behaviors from session tool data.", []),
+            ActionSkill("PatternEvolver", "Promoting project-scoped instincts to global thinking patterns.", [])
+        ],
+        ThinkingStrategy.COUNCIL_OF_CRITICS: [
+            ActionSkill("ArchitectLens", "Advising on structural integrity and long-term maintenance.", []),
+            ActionSkill("SkepticLens", "Challenging premises and identifying hidden assumptions.", []),
+            ActionSkill("PragmatistLens", "Optimizing for shipping speed and operational reality.", []),
+            ActionSkill("CriticLens", "Surfacing downside risks and catastrophic failure modes.", [])
         ]
     }
 

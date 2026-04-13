@@ -17,7 +17,12 @@ It forces the LLM to stop giving "shallow-first" answers and instead utilize a h
 
   * **Persistent Cognition:** Unlike stateless chats, CCT remembers *why* a decision was made 3 months ago via its SQLite-backed `MemoryManager`.
   * **Evolutionary Memory:** Automatically archives high-scoring logic into **Thinking Patterns** (Golden Skills) and logs failures as **Anti-Patterns** to prevent recursive mistakes.
-  * **Strategy Enforcer:** It's not a suggestion; it's a protocol. The AI must follow specific cognitive primitives (First Principles, Abductive, etc.) before writing a single line of code.
+  * **Planning Orchestration:** Native support for advanced reasoning patterns including ReAct, ReWOO, Tree of Thoughts (ToT), and Plan-and-Execute.
+  * **Standardized Engineering SOP:** Enforces an **Engineering Deconstruction** phase (Eval-First + 15-Minute Rule) before any implementation begins.
+  * **Self-Debugging Intelligence:** Built-in protocol to detect tool loops and task drift, switching to an Introspection mode to diagnose and recover before burning tokens.
+  * **Socratic Gate (Brainstorming):** Mandatory discovery phase for vague tasks. Enforces 3 critical questions before any code is written.
+  * **Four-Voice Council:** Multi-persona decision architecture (Architect, Skeptic, Pragmatist, Critic) for high-stakes trade-offs.
+  * **Evolutionary Archive (Learning):** Automatic session post-mortems that extract "Instincts" and promote them to durable Thinking Patterns.
 
 ## 🎯 The Goal
 
@@ -38,13 +43,13 @@ CCT is built for both velocity and extreme safety. The execution mode is enforce
 
 When a Mission is dispatched, the AI follows this strict SOP:
 
-1.  **Phase 0 (Meta-Cognitive Routing):** AI dynamically selects its thinking pipeline based on the domain (DEBUG, ARCH, SEC). It injects past *Thinking Patterns* and *Anti-Patterns*.
-2.  **Phase 1.5 (Empirical Grounding):** Search the web. Validate facts. No "lazy" internal knowledge.
-3.  **Phase 2 (Deconstruction):** Break the problem down using Primitives.
-4.  **Phase 3 (The Crucible):** Run the Actor-Critic debate to find vulnerabilities.
-5.  **Phase 4 (Future-Proofing):** Project technical debt via Temporal Horizon.
-6.  **Phase 6 (Clearance Checkpoint):** Execute Autonomous or Human Stop protocol.
-7.  **Phase 7 (Final Execution):** Output the battle-tested code/architecture.
+1.  **Phase 0 (Meta-Cognitive Routing):** AI dynamically selects its thinking pipeline (DEBUG, ARCH, FEAT). It injects past *Thinking Patterns* and *Anti-Patterns*.
+2.  **Phase 1 (Engineering Deconstruction):** Mandatory SOP. Define success criteria (Eval-First) and break work into 15-minute atomized units.
+3.  **Phase 2 (Planning & Pattern Execution):** Apply the optimal reasoning model (ReAct for tools, ToT for complexity, CoT for logic).
+4.  **Phase 3 (Empirical Grounding):** Search the web. Validate facts. Ground the mission in real-world data.
+5.  **Phase 4 (The Crucible):** Run the Actor-Critic debate to find vulnerabilities and edge cases.
+6.  **Phase 5 (Future-Proofing):** Project technical debt and scalability via Temporal Horizon.
+7.  **Phase 6 (Final Execution):** Output the battle-tested code/architecture under Autonomous or HITL protocols.
 
 ## �️ Production Features
 
@@ -102,6 +107,33 @@ health_check()
 HEALTHCHECK --interval=30s --timeout=3s \
   CMD python -c "import requests; requests.post('http://localhost:8000/health_check')" || exit 1
 ```
+
+### 🧠 Cognitive Strategies & Planning
+
+CCT supports specialized reasoning patterns for different classes of complexity:
+
+| Strategy | Usage | Best For |
+|----------|-------|----------|
+| `REACT` | Reasoning-and-Acting loop | Tool-intensive discovery |
+| `TREE_OF_THOUGHTS` | Branching exploration | Complex multi-path problems |
+| `REWOO` | Plan-First, Execute-Parallel | High-latency, multi-step tasks |
+| `PLAN_AND_EXECUTE` | Structured task sequencing | Large engineering implementations |
+| `CHAIN_OF_THOUGHT` | Step-by-step linear logic | Deep mathematical or logic proofs |
+| `ENGINEERING_DECONSTRUCTION` | Mandatory Engineering SOP | Breaking down `FEAT` and `ARCH` tasks |
+| `SELF_DEBUGGING` | Fail-Safe Introspection | Recovering from loops, drift, and burn |
+
+---
+
+### 🚦 Model Routing (Operational Intelligence)
+
+Optimal engineering requires matching the task to the right "intelligence tier":
+
+*   **⚡ Haiku**: Classification, simple boilerplate, and localized documentation.
+*   **🧠 Sonnet**: Standard feature implementation and complex logic.
+*   **🏛️ Opus**: Root-cause analysis, architecture design, and high-impact invariants.
+
+---
+
 
 ## �🖥️ Mission Control Dashboard
 

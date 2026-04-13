@@ -16,7 +16,9 @@ class PipelineSelector:
         "ARCH": {"arch", "structure", "design", "refactor", "engine", "system", "framework", "schema", "scaling"},
         "FEAT": {"feature", "implement", "add", "new", "create", "build", "develop", "functionality"},
         "SEC": {"security", "hack", "vulnerability", "auth", "harden", "encrypt", "protect", "injection", "cve"},
-        "BIZ": {"market", "business", "strategy", "cost", "token", "price", "revenue", "profit", "roi", "product"}
+        "BIZ": {"market", "business", "strategy", "cost", "token", "price", "revenue", "profit", "roi", "product"},
+        "PLAN": {"plan", "reason", "step-by-step", "recursive", "branching", "sequence", "workflow", "automated", "autonomous"},
+        "ENGINEERING": {"refactor", "optimize", "architecture", "test", "eval", "benchmark", "agentic", "implementation"}
     }
 
     # Standardized deep reasoning sequence for COMPLEX tasks
@@ -28,7 +30,8 @@ class PipelineSelector:
         ThinkingStrategy.SYSTEMIC,             # Phase 5: Holistic Connectivity
         ThinkingStrategy.UNCONVENTIONAL_PIVOT, # Phase 6: Paradigm Breaking
         ThinkingStrategy.LONG_TERM_HORIZON,    # Phase 7: Strategic Impact (Checkpoint)
-        ThinkingStrategy.MULTI_AGENT_FUSION    # Phase 8: Final Synthesis
+        ThinkingStrategy.MULTI_AGENT_FUSION,   # Phase 8: Final Synthesis
+        ThinkingStrategy.POST_MISSION_LEARNING # Phase 9: Evolutionary Archive
     ]
 
     # Persona mapping for Council of Critics based on detected domains
@@ -44,31 +47,51 @@ class PipelineSelector:
     # Mapping Categories to Strategy Sequences (Moderate/Default)
     PIPELINE_TEMPLATES = {
         "DEBUG": [
+            ThinkingStrategy.SELF_DEBUGGING,
             ThinkingStrategy.EMPIRICAL_RESEARCH,
             ThinkingStrategy.ABDUCTIVE,
             ThinkingStrategy.FIRST_PRINCIPLES,
             ThinkingStrategy.ACTOR_CRITIC_LOOP
         ],
         "ARCH": [
+            ThinkingStrategy.BRAINSTORMING,
+            ThinkingStrategy.ENGINEERING_DECONSTRUCTION,
             ThinkingStrategy.FIRST_PRINCIPLES,
             ThinkingStrategy.SYSTEMIC,
-            ThinkingStrategy.LONG_TERM_HORIZON,
-            ThinkingStrategy.MULTI_AGENT_FUSION
+            ThinkingStrategy.COUNCIL_OF_CRITICS,
+            ThinkingStrategy.POST_MISSION_LEARNING
         ],
         "FEAT": [
-            ThinkingStrategy.LATERAL,
-            ThinkingStrategy.CONVERGENT,
-            ThinkingStrategy.PRACTICAL
+            ThinkingStrategy.BRAINSTORMING,
+            ThinkingStrategy.ENGINEERING_DECONSTRUCTION,
+            ThinkingStrategy.SYSTEMATIC,
+            ThinkingStrategy.ACTOR_CRITIC_LOOP,
+            ThinkingStrategy.POST_MISSION_LEARNING
         ],
         "SEC": [
             ThinkingStrategy.CRITICAL,
             ThinkingStrategy.ACTOR_CRITIC_LOOP,
-            ThinkingStrategy.SYSTEMIC
+            ThinkingStrategy.SYSTEMIC,
+            ThinkingStrategy.POST_MISSION_LEARNING
         ],
         "BIZ": [
             ThinkingStrategy.SWOT_ANALYSIS,
             ThinkingStrategy.SECOND_ORDER_THINKING,
-            ThinkingStrategy.LONG_TERM_HORIZON
+            ThinkingStrategy.LONG_TERM_HORIZON,
+            ThinkingStrategy.POST_MISSION_LEARNING
+        ],
+        "PLAN": [
+            ThinkingStrategy.PLAN_AND_EXECUTE,
+            ThinkingStrategy.REACT,
+            ThinkingStrategy.TREE_OF_THOUGHTS,
+            ThinkingStrategy.POST_MISSION_LEARNING
+        ],
+        "ENGINEERING": [
+            ThinkingStrategy.BRAINSTORMING,
+            ThinkingStrategy.ENGINEERING_DECONSTRUCTION,
+            ThinkingStrategy.SYSTEMIC,
+            ThinkingStrategy.DEDUCTIVE_VALIDATION,
+            ThinkingStrategy.POST_MISSION_LEARNING
         ]
     }
 
