@@ -57,8 +57,8 @@ class SequentialEngine:
         validated_total = max(session.estimated_total_thoughts, llm_estimated_total)
 
         if is_revision:
-            validated_total += 2 
-            logger.info(f"Revision detected. Expanding total steps to {validated_total}.")
+            validated_total += REVISION_EXPANSION_INCREMENT
+            logger.info(f"Revision detected. Expanding total steps to {validated_total} (Increment: {REVISION_EXPANSION_INCREMENT}).")
             
         if next_thought_needed and validated_thought_number >= validated_total:
             validated_total = validated_thought_number + 1
@@ -89,7 +89,12 @@ class SequentialEngine:
             next_thought_needed=next_thought_needed
         )
 
-    def evaluate_convergence(self, session_id: str, next_thought_needed: bool) -> Dict[str, Any]:
+    def evaluate_convergence(
+        self, 
+        session_id: str, 
+        next_thought_needed: bool,
+        metrics: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
         session = self.memory.get_session(session_id)
         if not session:
             return {"is_ready": False, "reason": "Session not found."}
@@ -97,6 +102,23 @@ class SequentialEngine:
         if next_thought_needed:
             return {"is_ready": False, "reason": "LLM explicitly requested continuation."}
             
+        # [EARLY CONVERGENCE DETECTION] v5.0 Master Protocol
+        # Check for elite coherence and evidence density to save tokens
+        if metrics:
+            coherence = metrics.get("logical_coherence", 0.0)
+            evidence = metrics.get("evidence_strength", 0.0)
+            
+            # High bar for convergence: Coherence > 0.95 AND Evidence > 0.8
+            if coherence >= 0.95 and evidence >= 0.8:
+                logger.info(f"Early Convergence detected for {session_id} (Coherence: {coherence}, Evidence: {evidence}).")
+                session.status = SessionStatus.COMPLETED
+                self.memory.update_session(session)
+                return {
+                    "is_ready": True, 
+                    "reason": "Elite convergence achieved (Metacognitive Audit success).",
+                    "early_stop": True
+                }
+
         minimum_depth = 3
         if len(session.history_ids) < minimum_depth:
             return {"is_ready": False, "reason": f"Minimum cognitive depth ({minimum_depth} steps) not reached."}
@@ -108,7 +130,10 @@ class SequentialEngine:
         session.status = SessionStatus.COMPLETED
         self.memory.update_session(session)
         
-        return {"is_ready": True, "reason": "Sequence limits met and no further thoughts required."}
+        return {
+            "is_ready": True, 
+            "reason": "Sequence limits met and no further thoughts required."
+        }
 
     def format_sequence_prompt(self, session_id: str) -> str:
         session = self.memory.get_session(session_id)

@@ -147,7 +147,11 @@ class CognitiveOrchestrator:
             
             # 5. [HITL TRIGGER] Evaluation for Clearance Checkpoint
             # If engine finished or converged, and profile is HITL, trigger the stop
-            convergence = self.sequential.evaluate_convergence(session_id, payload.get("next_thought_needed", True))
+            convergence = self.sequential.evaluate_convergence(
+                session_id, 
+                payload.get("next_thought_needed", True),
+                metrics=result.get("metrics")
+            )
             if convergence.get("is_ready") and session.profile == CCTProfile.HUMAN_IN_THE_LOOP:
                 logger.warning(f"[HITL] Session {session_id} converged. Triggering Phase 7 Clearance Checkpoint.")
                 # We use the current result summary as the basis for the human stop

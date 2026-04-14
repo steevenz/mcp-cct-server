@@ -1,6 +1,7 @@
 import logging
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Optional
 from src.core.models.enums import ThinkingStrategy
+from src.core.services.complexity import TaskComplexity
 
 logger = logging.getLogger(__name__)
 
@@ -133,13 +134,13 @@ class PipelineSelector:
         return personas
 
     @classmethod
-    def select_pipeline(cls, problem_statement: str, complexity: str = "moderate") -> List[ThinkingStrategy]:
+    def select_pipeline(cls, problem_statement: str, complexity: Optional[TaskComplexity] = None) -> List[ThinkingStrategy]:
         """
         Categorizes the problem and returns the matching pipeline.
-        If complexity is 'complex', returns the Sovereign Pipeline.
+        If complexity is 'complex' or 'sovereign', returns the Sovereign Pipeline.
         """
-        if complexity == "complex":
-            logger.info("Complex task detected. Routing to Sovereign 8-Step Pipeline.")
+        if complexity in (TaskComplexity.COMPLEX, TaskComplexity.SOVEREIGN):
+            logger.info(f"High-stakes complexity detected ({complexity}). Routing to Sovereign 9-Step Pipeline.")
             return cls.SOVEREIGN_PIPELINE
             # Wait, I just defined it above.
             
