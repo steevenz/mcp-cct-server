@@ -30,9 +30,10 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
         fusion_orchestrator: FusionOrchestrator,
         orchestration: OrchestrationService,
         llm: LLMClient,
-        guidance: GuidanceService
+        guidance: GuidanceService,
+        identity: IdentityService
     ):
-        super().__init__(memory_manager, sequential_engine)
+        super().__init__(memory_manager, sequential_engine, identity)
         self.fusion = fusion_orchestrator
         self.orchestration = orchestration
         self.llm = llm
@@ -81,9 +82,10 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
                     f"PERSONA: {persona}\n"
                     f"INSTRUCTION: Provide a deep technical analysis from your specific expertise."
                 )
+                persona_sys_prompt = f"You are a {persona} expert participating in a cognitive war room."
                 content = await self.llm.generate_thought(
                     prompt=prompt,
-                    system_prompt=f"You are a {persona} expert participating in a cognitive war room."
+                    system_prompt=self._get_identity_decorated_system_prompt(session_id, persona_sys_prompt)
                 )
 
                 p_thought = EnhancedThought(

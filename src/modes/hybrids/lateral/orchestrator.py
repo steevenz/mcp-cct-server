@@ -15,12 +15,9 @@ from .schemas import LateralPivotInput
 
 logger = logging.getLogger(__name__)
 
-class LateralEngine(BaseCognitiveEngine):
     """
-    Engine for breaking out of local optima using lateral thinking.
-    Forces the AI to abandon its current paradigm and generate a completely 
-    unorthodox approach based on specific provocation methods.
-    """
+    def __init__(self, memory_manager: Any, sequential_engine: Any, identity_service: Any):
+        super().__init__(memory_manager, sequential_engine, identity_service)
 
     @property
     def strategy_type(self) -> ThinkingStrategy:

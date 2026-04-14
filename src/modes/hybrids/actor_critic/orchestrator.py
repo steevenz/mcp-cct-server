@@ -33,9 +33,10 @@ class ActorCriticEngine(BaseCognitiveEngine):
         sequential_engine: Any,
         orchestration: OrchestrationService,
         llm: LLMClient,
-        guidance: GuidanceService
+        guidance: GuidanceService,
+        identity: IdentityService
     ):
-        super().__init__(memory_manager, sequential_engine)
+        super().__init__(memory_manager, sequential_engine, identity)
         self.orchestration = orchestration
         self.llm = llm
         self.guidance = guidance
@@ -83,9 +84,10 @@ class ActorCriticEngine(BaseCognitiveEngine):
                 f"PERSONA: {validated_input.critic_persona}\n"
                 f"INSTRUCTION: Identify flaws, vulnerabilities, or bottlenecks."
             )
+            critic_sys_prompt = f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
             critic_content = await self.llm.generate_thought(
                 prompt=critic_prompt,
-                system_prompt=f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
+                system_prompt=self._get_identity_decorated_system_prompt(session_id, critic_sys_prompt)
             )
             
             critic_thought = EnhancedThought(
@@ -117,9 +119,10 @@ class ActorCriticEngine(BaseCognitiveEngine):
                 f"CRITIQUE: {critic_content}\n"
                 f"INSTRUCTION: Resolve the conflicts and formulate a production-ready solution."
             )
+            synth_sys_prompt = "You are a Systems Architect. Synthesize the proposal with its criticisms."
             synthesis_content = await self.llm.generate_thought(
                 prompt=synth_prompt,
-                system_prompt="You are a Systems Architect. Synthesize the proposal with its criticisms."
+                system_prompt=self._get_identity_decorated_system_prompt(session_id, synth_sys_prompt)
             )
             
             synthesis_thought = EnhancedThought(

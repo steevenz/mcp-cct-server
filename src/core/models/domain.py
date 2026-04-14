@@ -80,6 +80,7 @@ class CCTSessionState(BaseModel):
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
     suggested_pipeline: List[ThinkingStrategy] = Field(default_factory=list)
     knowledge_injection: Dict[str, Any] = Field(default_factory=dict)
+    identity_layer: Dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     
     # Multi-Scenario Context

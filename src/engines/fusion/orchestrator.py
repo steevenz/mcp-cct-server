@@ -14,6 +14,7 @@ from src.engines.sequential.engine import SequentialEngine
 from src.core.services.orchestration import OrchestrationService
 from src.infrastructure.llm.client import LLMClient
 from src.core.services.guidance import GuidanceService
+from src.core.services.identity import IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,8 @@ class FusionOrchestrator:
         sequential: SequentialEngine,
         orchestration: OrchestrationService,
         llm: LLMClient,
-        guidance: GuidanceService
+        guidance: GuidanceService,
+        identity: IdentityService
     ):
         self.memory = memory
         self.scoring = scoring
@@ -42,6 +44,7 @@ class FusionOrchestrator:
         self.orchestration = orchestration
         self.llm = llm
         self.guidance = guidance
+        self.identity = identity
 
     async def fuse_thoughts(
         self,
@@ -95,9 +98,10 @@ class FusionOrchestrator:
         
         if mode == "autonomous":
             logger.info(f"[FUSION] Executing autonomous synthesis for session {session_id}")
+            fusion_sys_prompt = "You are the CCT Fusion Engine. Synthesize the provided thoughts into a unified conclusion."
             fusion_content = await self.llm.generate_thought(
                 prompt=fusion_prompt,
-                system_prompt="You are the CCT Fusion Engine. Synthesize the provided thoughts into a unified conclusion."
+                system_prompt=self._get_identity_decorated_system_prompt(session_id, fusion_sys_prompt)
             )
             thought_type = ThoughtType.SYNTHESIS
         else:
@@ -156,3 +160,14 @@ class FusionOrchestrator:
         avg_coherence = sum(t.metrics.logical_coherence for t in recent) / len(recent)
         
         return avg_coherence >= threshold
+
+    def _get_identity_decorated_system_prompt(self, session_id: str, base_system_prompt: str) -> str:
+        """Helper to decorate prompts with identity context."""
+        session = self.memory.get_session(session_id)
+        if not session or not session.identity_layer:
+            identity = self.identity.load_identity()
+        else:
+            identity = session.identity_layer
+            
+        prefix = self.identity.format_system_prefix(identity)
+        return f"{prefix}\n\n{base_system_prompt}"
