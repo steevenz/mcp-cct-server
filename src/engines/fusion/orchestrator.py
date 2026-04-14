@@ -10,6 +10,11 @@ from src.engines.memory.manager import MemoryManager
 from src.analysis.scoring_engine import ScoringEngine
 from src.engines.sequential.engine import SequentialEngine
 
+# New Services
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
+from src.core.services.guidance import GuidanceService
+
 logger = logging.getLogger(__name__)
 
 class FusionOrchestrator:
@@ -26,13 +31,19 @@ class FusionOrchestrator:
         self,
         memory: MemoryManager,
         scoring: ScoringEngine,
-        sequential: SequentialEngine
+        sequential: SequentialEngine,
+        orchestration: OrchestrationService,
+        llm: LLMClient,
+        guidance: GuidanceService
     ):
         self.memory = memory
         self.scoring = scoring
         self.sequential = sequential
+        self.orchestration = orchestration
+        self.llm = llm
+        self.guidance = guidance
 
-    def fuse_thoughts(
+    async def fuse_thoughts(
         self,
         session_id: str,
         thought_ids: List[str],
@@ -69,10 +80,7 @@ class FusionOrchestrator:
             f"--- Thought {t.id} ({t.strategy.value}) ---\n{t.content}" 
             for t in thoughts
         ])
-
-        # 3. Prompt Synthesis (Simulated logic for synthesis)
-        # In a real environment, this would call a cheap/fast LLM completion.
-        # [LEGO] This part is designed to be copy-pasteable into an LLM bridge.
+        
         fusion_prompt = (
             f"GOAL: {synthesis_goal}\n"
             f"Tier: {model_tier}\n"
@@ -80,9 +88,24 @@ class FusionOrchestrator:
             "INSTRUCTION: Synthesize the above perspectives into a single cohesive conclusion. "
             "Remove redundancies, resolve contradictions, and identify common patterns."
         )
-        
-        # [AUTOMATIC PIPELINE] Creating the synthesis thought
+
+        # 3. Mode Determination & Synthesis
         session = self.memory.get_session(session_id)
+        mode = self.orchestration.get_execution_mode(session.complexity)
+        
+        if mode == "autonomous":
+            logger.info(f"[FUSION] Executing autonomous synthesis for session {session_id}")
+            fusion_content = await self.llm.generate_thought(
+                prompt=fusion_prompt,
+                system_prompt="You are the CCT Fusion Engine. Synthesize the provided thoughts into a unified conclusion."
+            )
+            thought_type = ThoughtType.SYNTHESIS
+        else:
+            logger.info(f"[FUSION] Providing guidance for manual synthesis in session {session_id}")
+            fusion_content = self.guidance.format_guidance_message(ThinkingStrategy.INTEGRATIVE)
+            thought_type = ThoughtType.PROTOCOL # Use PROTOCOL instead of SYNTHESIS for guided placeholder
+
+        # [AUTOMATIC PIPELINE] Creating the synthesis thought
         thought_number = session.current_thought_number + 1
         
         seq_context = self.sequential.process_sequence_step(
@@ -94,19 +117,15 @@ class FusionOrchestrator:
             revises_id=thought_ids[0] if thought_ids else None
         )
 
-        # Build content (placeholder for actual LLM result)
-        # In actual implementation, we'd wait for the LLM result here.
-        fusion_content = f"[FUSION SYNTHESIS]\n{fusion_prompt}\n\n[RESULT]: Unified Cognitive Conclusion based on {len(thoughts)} inputs."
-
         fusion_thought = EnhancedThought(
             id=f"fusion_{uuid.uuid4().hex[:8]}",
             content=fusion_content,
-            thought_type=ThoughtType.SYNTHESIS,
+            thought_type=thought_type,
             strategy=ThinkingStrategy.INTEGRATIVE,
             parent_id=thought_ids[-1],
             builds_on=thought_ids,
             sequential_context=seq_context,
-            tags=["fusion", "synthesis", model_tier]
+            tags=["fusion", "synthesis", model_tier, mode]
         )
 
         # 4. Scoring Validation & Cost Analysis (Automatic Quality Gate)

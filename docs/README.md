@@ -54,6 +54,7 @@ cp docs/rules/system-prompt.md .cursorrules
 In a separate terminal, launch the Streamlit interface to monitor the AI's cognitive tree in real-time:
 
 ```bash
+git checkout dev-dashboard
 streamlit run dashboard.py
 ```
 
@@ -77,7 +78,7 @@ mcp-cct-server/
 │       ├── Thinking-Patterns/  # Archived Golden Skills (e.g., GS_91ddde72.md)
 │       └── Anti-Patterns/      # Logged failures and corrective actions
 ├── tests/                  # Unit and integration tests
-├── dashboard.py            # Streamlit real-time telemetry UI
+├── dashboard.py            # Streamlit real-time telemetry UI (dev-dashboard branch)
 ├── cct_memory.db           # SQLite database (Auto-generated on first run)
 ├── cct-dispatch.md         # Dynamic mission briefing template
 ├── requirements.txt

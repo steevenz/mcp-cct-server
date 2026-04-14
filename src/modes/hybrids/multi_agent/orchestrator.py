@@ -9,6 +9,11 @@ from src.modes.base import BaseCognitiveEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
 from .schemas import MultiAgentFusionInput
 
+# New Services
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
+from src.core.services.guidance import GuidanceService
+
 logger = logging.getLogger(__name__)
 
 class MultiAgentFusionEngine(BaseCognitiveEngine):
@@ -18,9 +23,20 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
     evaluate a base thought and their insights are fused into a master conclusion.
     """
 
-    def __init__(self, memory_manager: Any, sequential_engine: Any, fusion_orchestrator: FusionOrchestrator):
+    def __init__(
+        self, 
+        memory_manager: Any, 
+        sequential_engine: Any, 
+        fusion_orchestrator: FusionOrchestrator,
+        orchestration: OrchestrationService,
+        llm: LLMClient,
+        guidance: GuidanceService
+    ):
         super().__init__(memory_manager, sequential_engine)
         self.fusion = fusion_orchestrator
+        self.orchestration = orchestration
+        self.llm = llm
+        self.guidance = guidance
 
     @property
     def strategy_type(self) -> ThinkingStrategy:
@@ -41,37 +57,75 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
 
         persona_nodes = []
         
+        mode = self.orchestration.get_execution_mode(session.complexity)
+        
         # 1. PHASE: Divergent Perspectives (Persona Insights)
-        for persona in validated_input.personas:
+        if mode == "autonomous":
+            logger.info(f"[MULTI-AGENT] Executing autonomous persona generation for session {session_id}")
+            for persona in validated_input.personas:
+                thought_number = session.current_thought_number + 1
+                seq_context = self.sequential.process_sequence_step(
+                    session_id=session_id,
+                    llm_thought_number=thought_number,
+                    llm_estimated_total=session.estimated_total_thoughts,
+                    next_thought_needed=True,
+                    branch_from_id=target_thought.id,
+                    branch_id=f"persona_{persona.lower().replace(' ', '_')}"
+                )
+
+                p_id = self._generate_thought_id("persona")
+                
+                # ACTUAL LLM CALL for persona insight
+                prompt = (
+                    f"CONTEXT: {target_thought.content}\n"
+                    f"PERSONA: {persona}\n"
+                    f"INSTRUCTION: Provide a deep technical analysis from your specific expertise."
+                )
+                content = await self.llm.generate_thought(
+                    prompt=prompt,
+                    system_prompt=f"You are a {persona} expert participating in a cognitive war room."
+                )
+
+                p_thought = EnhancedThought(
+                    id=p_id,
+                    content=content,
+                    thought_type=ThoughtType.ANALYSIS,
+                    strategy=ThinkingStrategy.CRITICAL,
+                    parent_id=target_thought.id,
+                    sequential_context=seq_context,
+                    tags=["multi_agent_fusion", "persona_insight", persona.lower(), "autonomous"]
+                )
+                self.memory.save_thought(session_id, p_thought)
+                persona_nodes.append(p_thought)
+                target_thought.children_ids.append(p_thought.id)
+                session.current_thought_number += 1
+        else:
+            logger.info(f"[MULTI-AGENT] Providing guidance for manual personas in session {session_id}")
+            # In Guided mode, we create ONE guidance thought instead of multiple mock ones
             thought_number = session.current_thought_number + 1
             seq_context = self.sequential.process_sequence_step(
                 session_id=session_id,
                 llm_thought_number=thought_number,
                 llm_estimated_total=session.estimated_total_thoughts,
-                next_thought_needed=True,
-                branch_from_id=target_thought.id,
-                branch_id=f"persona_{persona.lower().replace(' ', '_')}"
+                next_thought_needed=True
             )
-
-            p_id = self._generate_thought_id("persona")
-            # Logic still simulates persona perspective, but now it's destined for Fusion
-            content = f"[MULTI-AGENT FUSION] Expert Insight ({persona}): Analyze '{target_thought.content}' from your specific domain expertise."
-
+            
+            p_id = self._generate_thought_id("guidance")
+            guidance_msg = self.guidance.format_guidance_message(ThinkingStrategy.MULTI_AGENT_FUSION)
+            guidance_msg += f"\nSUGGESTED PERSONAS: {', '.join(validated_input.personas)}"
+            
             p_thought = EnhancedThought(
                 id=p_id,
-                content=content,
-                thought_type=ThoughtType.ANALYSIS,
-                strategy=ThinkingStrategy.CRITICAL,
+                content=guidance_msg,
+                thought_type=ThoughtType.PROTOCOL,
+                strategy=ThinkingStrategy.MULTI_AGENT_FUSION,
                 parent_id=target_thought.id,
                 sequential_context=seq_context,
-                tags=["multi_agent_fusion", "persona_insight", persona.lower()]
+                tags=["multi_agent_fusion", "guidance", "guided"]
             )
             self.memory.save_thought(session_id, p_thought)
-            persona_nodes.append(p_thought)
-            # Link to parent
+            persona_nodes.append(p_thought) # Placeholder for following steps
             target_thought.children_ids.append(p_thought.id)
-
-            # Update session thought number for next iteration
             session.current_thought_number += 1
 
         # Save updated target with all persona children

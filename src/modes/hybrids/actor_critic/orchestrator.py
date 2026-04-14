@@ -12,6 +12,12 @@ from src.modes.base import BaseCognitiveEngine
 # Local schema
 from .schemas import ActorCriticDialogInput
 
+# New Services
+from typing import Any
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
+from src.core.services.guidance import GuidanceService
+
 logger = logging.getLogger(__name__)
 
 class ActorCriticEngine(BaseCognitiveEngine):
@@ -20,6 +26,19 @@ class ActorCriticEngine(BaseCognitiveEngine):
     Automates a two-phase process: Criticism (Attacking a proposal) 
     and Synthesis (Resolving the flaws).
     """
+
+    def __init__(
+        self,
+        memory_manager: Any,
+        sequential_engine: Any,
+        orchestration: OrchestrationService,
+        llm: LLMClient,
+        guidance: GuidanceService
+    ):
+        super().__init__(memory_manager, sequential_engine)
+        self.orchestration = orchestration
+        self.llm = llm
+        self.guidance = guidance
 
     @property
     def strategy_type(self) -> ThinkingStrategy:
@@ -43,81 +62,112 @@ class ActorCriticEngine(BaseCognitiveEngine):
 
         logger.info(f"Initiating Actor-Critic loop for target thought: {target_thought.id}")
 
-        # =====================================================================
-        # PHASE 1: THE CRITIC (Evaluation)
-        # =====================================================================
-        # Simulate LLM step increment for the automated critic node
-        critic_simulated_step = session.current_thought_number + 1
-        
-        critic_seq_context = self.sequential.process_sequence_step(
-            session_id=session_id,
-            llm_thought_number=critic_simulated_step,
-            llm_estimated_total=session.estimated_total_thoughts,
-            next_thought_needed=True,
-            branch_from_id=target_thought.id,
-            branch_id="critic_branch"
-        )
-        
-        critic_thought_id = self._generate_thought_id("critic")
-        critic_prompt = (
-            f"[INTERNAL AUTOMATION] As a {validated_input.critic_persona}, critically evaluate this proposal: "
-            f"'{target_thought.content}'. Identify architectural flaws, security vulnerabilities, "
-            f"or scalability bottlenecks. Do not solve them yet, only attack the weaknesses."
-        )
+        mode = self.orchestration.get_execution_mode(session.complexity)
 
-        critic_thought = EnhancedThought(
-            id=critic_thought_id,
-            content=critic_prompt,
-            thought_type=ThoughtType.EVALUATION,
-            strategy=ThinkingStrategy.CRITICAL,
-            parent_id=target_thought.id,
-            contradicts=[target_thought.id],
-            sequential_context=critic_seq_context,
-            tags=["actor_critic_loop", "critic_phase", "vulnerability_scan"]
-        )
-        
-        self.memory.save_thought(session_id, critic_thought)
-
-        # =====================================================================
-        # PHASE 2: THE SYNTHESIS (Resolution)
-        # =====================================================================
-        # We flag is_revision=True to dynamically expand the thought limit
-        synth_simulated_step = session.current_thought_number + 1
-        
-        synthesis_seq_context = self.sequential.process_sequence_step(
-            session_id=session_id,
-            llm_thought_number=synth_simulated_step,
-            llm_estimated_total=session.estimated_total_thoughts,
-            next_thought_needed=False,
-            is_revision=True,
-            revises_id=target_thought.id
-        )
-
-        synthesis_thought_id = self._generate_thought_id("synth")
-        synthesis_prompt = (
-            f"[INTERNAL AUTOMATION] Synthesize the original proposal ({target_thought.id}) with the identified "
-            f"criticisms ({critic_thought.id}). Resolve the conflicts to formulate a "
-            f"robust, production-ready implementation."
-        )
-
-        synthesis_thought = EnhancedThought(
-            id=synthesis_thought_id,
-            content=synthesis_prompt,
-            thought_type=ThoughtType.SYNTHESIS,
-            strategy=ThinkingStrategy.DIALECTICAL,
-            parent_id=critic_thought.id,
-            builds_on=[target_thought.id, critic_thought.id],
-            sequential_context=synthesis_seq_context,
-            tags=["actor_critic_loop", "synthesis_phase", "resolution"]
-        )
-
-        self.memory.save_thought(session_id, synthesis_thought)
+        if mode == "autonomous":
+            logger.info(f"[ACTOR-CRITIC] Executing autonomous loop for session {session_id}")
+            
+            # PHASE 1: THE CRITIC
+            critic_simulated_step = session.current_thought_number + 1
+            critic_seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=critic_simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=True,
+                branch_from_id=target_thought.id,
+                branch_id="critic_branch"
+            )
+            
+            critic_prompt = (
+                f"AUDIT TARGET: {target_thought.content}\n"
+                f"PERSONA: {validated_input.critic_persona}\n"
+                f"INSTRUCTION: Identify flaws, vulnerabilities, or bottlenecks."
+            )
+            critic_content = await self.llm.generate_thought(
+                prompt=critic_prompt,
+                system_prompt=f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
+            )
+            
+            critic_thought = EnhancedThought(
+                id=self._generate_thought_id("critic"),
+                content=critic_content,
+                thought_type=ThoughtType.EVALUATION,
+                strategy=ThinkingStrategy.CRITICAL,
+                parent_id=target_thought.id,
+                contradicts=[target_thought.id],
+                sequential_context=critic_seq_context,
+                tags=["actor_critic_loop", "critic_phase", "autonomous"]
+            )
+            self.memory.save_thought(session_id, critic_thought)
+            session.current_thought_number += 1
+            
+            # PHASE 2: THE SYNTHESIS
+            synth_simulated_step = session.current_thought_number + 1
+            synthesis_seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=synth_simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=False,
+                is_revision=True,
+                revises_id=target_thought.id
+            )
+            
+            synth_prompt = (
+                f"ORIGINAL: {target_thought.content}\n"
+                f"CRITIQUE: {critic_content}\n"
+                f"INSTRUCTION: Resolve the conflicts and formulate a production-ready solution."
+            )
+            synthesis_content = await self.llm.generate_thought(
+                prompt=synth_prompt,
+                system_prompt="You are a Systems Architect. Synthesize the proposal with its criticisms."
+            )
+            
+            synthesis_thought = EnhancedThought(
+                id=self._generate_thought_id("synth"),
+                content=synthesis_content,
+                thought_type=ThoughtType.SYNTHESIS,
+                strategy=ThinkingStrategy.DIALECTICAL,
+                parent_id=critic_thought.id,
+                builds_on=[target_thought.id, critic_thought.id],
+                sequential_context=synthesis_seq_context,
+                tags=["actor_critic_loop", "synthesis_phase", "autonomous"]
+            )
+            self.memory.save_thought(session_id, synthesis_thought)
+            session.current_thought_number += 1
+            
+        else:
+            logger.info(f"[ACTOR-CRITIC] Providing guided loop for session {session_id}")
+            
+            # Create ONE guidance thought instead of multi-step automation
+            simulated_step = session.current_thought_number + 1
+            seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=True
+            )
+            
+            guidance_msg = self.guidance.format_guidance_message(ThinkingStrategy.ACTOR_CRITIC_LOOP)
+            guidance_msg += f"\nSTAKEHOLDER: {validated_input.critic_persona}"
+            
+            synthesis_thought = EnhancedThought(
+                id=self._generate_thought_id("guidance"),
+                content=guidance_msg,
+                thought_type=ThoughtType.PROTOCOL,
+                strategy=ThinkingStrategy.ACTOR_CRITIC_LOOP,
+                parent_id=target_thought.id,
+                sequential_context=seq_context,
+                tags=["actor_critic_loop", "guidance", "guided"]
+            )
+            self.memory.save_thought(session_id, synthesis_thought)
+            session.current_thought_number += 1
 
         # Update the original thought's children to maintain tree integrity
-        target_thought.children_ids.append(critic_thought.id)
+        target_thought.children_ids.append(synthesis_thought.id)
         self.memory.update_thought(session_id, target_thought)
+        self.memory.update_session(session)
 
-        logger.info(f"Actor-Critic loop completed. Synthesis ID: {synthesis_thought.id}")
+        logger.info(f"Actor-Critic loop handled. Final Thought ID: {synthesis_thought.id} (Mode: {mode})")
 
         return {
             "status": "success",

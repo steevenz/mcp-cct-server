@@ -23,13 +23,15 @@ from src.engines.fusion.router import AutomaticPipelineRouter
 from src.modes.registry import CognitiveEngineRegistry
 from src.engines.orchestrator import CognitiveOrchestrator
 
+# New Hybrid Services
+from src.core.services.complexity import ComplexityService
+from src.core.services.guidance import GuidanceService
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
+
 # API Layer / Tools
-# Simplified Tools: Hanya 3 tools dengan automatic strategy selection
 from src.tools.simplified_tools import register_simplified_tools
 from src.tools.export_tools import register_export_tools
-# Legacy tools (disabled untuk simplifikasi):
-# from src.tools.cognitive_tools import register_cognitive_tools
-# from src.tools.session_tools import register_session_tools
 
 # ============================================================================
 # ENTERPRISE LOGGING CONFIGURATION
@@ -62,7 +64,7 @@ def main():
     # Reconfigure logging level based on settings
     logging.getLogger().setLevel(getattr(logging, settings.log_level))
 
-    # Setup signal handlers for graceful shutdown (SIGTERM for Docker/systemd)
+    # Setup signal handlers for graceful shutdown
     def _signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         sys.exit(0)
@@ -73,18 +75,24 @@ def main():
     # 2. Initialize the MCP Server Instance
     mcp_instance = FastMCP(settings.server_name, host=settings.host, port=settings.port)
 
-    # 3. Dependency Injection: Instantiate Core Engines
+    # 3. Dependency Injection: Instantiate Core Engines & Hybrid Services
     logger.info("Initializing Core Cognitive Infrastructure...")
     try:
         memory_manager = MemoryManager()
         sequential_engine = SequentialEngine(memory_manager)
-        scoring_engine = ScoringEngine()  # NEW: Handles performance metrics
+        scoring_engine = ScoringEngine()
+        
+        # New Hybrid Services Initialization
+        complexity_service = ComplexityService()
+        guidance_service = GuidanceService()
+        orchestration_service = OrchestrationService(settings)
+        llm_client = LLMClient(settings)
         
         # Validate critical components
         if not memory_manager or not sequential_engine or not scoring_engine:
             raise RuntimeError("Failed to initialize critical engine components")
             
-        logger.info("Core engines initialized successfully")
+        logger.info("Core engines and Hybrid services initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize core engines: {e}")
         sys.exit(1)
@@ -94,7 +102,10 @@ def main():
     fusion_orchestrator = FusionOrchestrator(
         memory=memory_manager,
         scoring=scoring_engine,
-        sequential=sequential_engine
+        sequential=sequential_engine,
+        orchestration=orchestration_service,
+        llm=llm_client,
+        guidance=guidance_service
     )
     automatic_router = AutomaticPipelineRouter(
         scoring_engine=scoring_engine
@@ -105,10 +116,13 @@ def main():
     engine_registry = CognitiveEngineRegistry(
         memory_manager=memory_manager,
         sequential_engine=sequential_engine,
-        fusion_orchestrator=fusion_orchestrator
+        fusion_orchestrator=fusion_orchestrator,
+        orchestration=orchestration_service,
+        llm=llm_client,
+        guidance=guidance_service
     )
 
-    # 6. Expose the MCP Tools to the exterior via the Master Orchestrator
+    # 6. Expose the MCP Tools via the Master Orchestrator
     logger.info("Initializing Master Orchestrator Facade...")
     master_orchestrator = CognitiveOrchestrator(
         memory_manager=memory_manager,
@@ -120,38 +134,26 @@ def main():
 
     logger.info("Registering API boundaries (MCP Tools)...")
 
-    # 6a. Register Simplified Tools (Hanya 3 tools dengan automatic strategy)
-    # session_start, session_think, session_list
+    # 6a. Register Simplified Tools
     register_simplified_tools(
         mcp=mcp_instance,
         orchestrator=master_orchestrator,
-        settings=settings
+        settings=settings,
+        complexity_service=complexity_service
     )
 
-    # 6b. Register Export & Metacognitive Analysis Tools (The Auditor)
+    # 6b. Register Export Tools
     register_export_tools(
         mcp=mcp_instance,
         orchestrator=master_orchestrator,
         settings=settings
     )
 
-
     logger.info("======================================================")
-    logger.info(f"CCT MCP Server is LIVE (Simplified Mode).")
+    logger.info(f"CCT MCP Server is LIVE (Hybrid Orchestration Mode).")
     logger.info(f"Server Name: {settings.server_name}")
     logger.info(f"Transport Protocol -> {settings.transport.upper()}")
-    logger.info(f"Max Sessions: {settings.max_sessions}")
-    logger.info("Simplified Toolset: thinking, rethinking, list_thinking")
-    logger.info("Automatic Strategy: Enabled (Simple/Moderate/Complex detection)")
-    
-    # Transport-specific readiness message
-    if settings.transport.strip().lower() in {"sse", "http"}:
-        logger.info(f"Ready for HTTP/SSE at http://{settings.host}:{settings.port}/sse")
-        logger.info(f"Messages endpoint at http://{settings.host}:{settings.port}/messages")
-    else:
-        logger.info("Ready for JSON-RPC over stdin/stdout.")
-        
-    logger.info("Press Ctrl+C to gracefully shut down.")
+    logger.info(f"LLM Provider -> {settings.llm_provider or 'NONE (Guided Fallback)'}")
     logger.info("======================================================")
 
     try:

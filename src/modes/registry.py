@@ -15,6 +15,11 @@ from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
 
+# New Services
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
+from src.core.services.guidance import GuidanceService
+
 logger = logging.getLogger(__name__)
 
 class CognitiveEngineRegistry:
@@ -27,11 +32,17 @@ class CognitiveEngineRegistry:
         self, 
         memory_manager: MemoryManager, 
         sequential_engine: SequentialEngine,
-        fusion_orchestrator: FusionOrchestrator
+        fusion_orchestrator: FusionOrchestrator,
+        orchestration: OrchestrationService,
+        llm: LLMClient,
+        guidance: GuidanceService
     ):
         self.memory = memory_manager
         self.sequential = sequential_engine
         self.fusion = fusion_orchestrator
+        self.orchestration = orchestration
+        self.llm = llm
+        self.guidance = guidance
         self._engines: Dict[ThinkingStrategy, BaseCognitiveEngine] = {}
         self._initialize_registry()
 
@@ -45,7 +56,10 @@ class CognitiveEngineRegistry:
                 self._engines[strategy] = MultiAgentFusionEngine(
                     self.memory, 
                     self.sequential, 
-                    self.fusion
+                    self.fusion,
+                    self.orchestration,
+                    self.llm,
+                    self.guidance
                 )
                 logger.info(f"Registry: Specialized Hybrid registered [{strategy.value}]")
                 continue
@@ -60,7 +74,19 @@ class CognitiveEngineRegistry:
             if strategy in hybrid_mapping:
                 # Initialize specific hybrids
                 engine_class = hybrid_mapping[strategy]
-                self._engines[strategy] = engine_class(self.memory, self.sequential)
+                
+                # [LEGO] Specialized injection for Actor-Critic which now supports Hybrid mode
+                if strategy == ThinkingStrategy.ACTOR_CRITIC_LOOP:
+                    self._engines[strategy] = engine_class(
+                        self.memory, 
+                        self.sequential,
+                        self.orchestration,
+                        self.llm,
+                        self.guidance
+                    )
+                else:
+                    self._engines[strategy] = engine_class(self.memory, self.sequential)
+                    
                 logger.info(f"Registry: Specialized Hybrid registered [%s]", strategy.value)
             else:
                 # Wrap all primitives into the Dynamic Engine

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
 
 PRD_ID = "20260412-000000-cct-mcp-scaffold"
 
@@ -28,6 +29,12 @@ class Settings:
     forex_default_rate: float
     forex_api_url: str
     enabled_tool_groups: set[str]
+    # LLM Provider configuration (New)
+    llm_provider: str | None
+    openai_api_key: str | None
+    anthropic_api_key: str | None
+    gemini_api_key: str | None
+    ollama_base_url: str | None
 
 
 def _parse_int(value: str, *, min_value: int, max_value: int, field_name: str) -> int:
@@ -55,6 +62,7 @@ def _parse_float(value: str, *, min_value: float, max_value: float, field_name: 
 
 
 def load_settings() -> Settings:
+    load_dotenv()
     server_name = os.getenv("CCT_SERVER_NAME", "cct-mcp-server").strip()
     if not server_name:
         raise ValueError("Invalid server name")
@@ -135,8 +143,6 @@ def load_settings() -> Settings:
         raise ValueError("Invalid forex API URL")
 
     # Tool Group Configuration
-    # Defaults to core, primitive, hybrid, and hitl tools. 
-    # Metadata (session) and Auditor (export) tools are disabled by default for LLM interaction.
     default_groups = "core,primitive,hybrid,hitl"
     enabled_groups_raw = os.getenv("CCT_ENABLED_TOOL_GROUPS", default_groups).strip().lower()
     enabled_tool_groups = {g.strip() for g in enabled_groups_raw.split(",") if g.strip()}
@@ -160,5 +166,9 @@ def load_settings() -> Settings:
         forex_default_rate=forex_default_rate,
         forex_api_url=forex_api_url,
         enabled_tool_groups=enabled_tool_groups,
+        llm_provider=os.getenv("CCT_LLM_PROVIDER", "").strip().lower() or None,
+        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip() or None,
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or None,
+        ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip() or None,
     )
-

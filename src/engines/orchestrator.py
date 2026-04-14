@@ -43,7 +43,7 @@ class CognitiveOrchestrator:
         self.hitl_enforcer = HITLEnforcer(memory_manager)
         logger.info("Cognitive Orchestrator (with Fusion/Router/HITL/Skills) initialized.")
 
-    def execute_strategy(
+    async def execute_strategy(
         self, 
         session_id: str, 
         strategy: ThinkingStrategy, 
@@ -94,7 +94,7 @@ class CognitiveOrchestrator:
             if session and "model_id" not in payload:
                 payload["model_id"] = session.model_id
 
-            result = engine.execute(session_id, payload)
+            result = await engine.execute(session_id, payload)
             
             # 3. [AUTOMATIC PIPELINE] Adaptive Feedback Loop
             self.check_and_pivot(session_id)
