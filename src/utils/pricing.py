@@ -115,9 +115,13 @@ class PricingManager:
             "gemini-1.5": "gemini-1.5-flash",
             "gemini-pro": "gemini-1.5-pro",
             "claude-3.5-sonnet": "claude-3-5-sonnet",
+            "claude-3.5-opus": "claude-3-opus",
             "claude-3.5": "claude-3-5-sonnet",
+            "claude-3-sonnet": "claude-3-5-sonnet",
             "gpt-4o-mini": "gpt-4o-mini",
-            "gpt-4o": "gpt-4o"
+            "gpt-4o": "gpt-4o",
+            "gpt-4-turbo": "gpt-4-turbo",
+            "gpt-4": "gpt-4o"
         }
 
         
@@ -166,9 +170,12 @@ class PricingManager:
         Calculates granular costs in USD and IDR.
         Returns a dictionary with input, output, and total costs.
         """
-        pricing = self._load_model_pricing(model_id)
+        # [PESSIMISTIC FALLBACK] If specific model resolution fails, use the ai-common-model average
+        if not pricing:
+            logger.info(f"Using 'ai-common-model' fallback for: {model_id}")
+            pricing = self._load_model_pricing("ai-common-model")
         
-        # Default to 0 if pricing not found (safety)
+        # Default to 0 if pricing still not found (extreme safety)
         rates = {
             "input_1k": 0.0,
             "output_1k": 0.0

@@ -71,6 +71,7 @@ def register_simplified_tools(
     @rate_limited(max_requests=10, window_seconds=60)
     async def thinking(
         problem_statement: str,
+        llm_model_name: str,
         thought_content: str = "",
         profile: str = "balanced",
         model_id: str = "",
@@ -119,7 +120,7 @@ def register_simplified_tools(
                 problem_statement=problem_statement,
                 profile=profile_enum,
                 estimated_thoughts=final_est,
-                model_id=model_id if model_id else settings.default_model,
+                model_id=llm_model_name if llm_model_name else (model_id if model_id else settings.default_model),
                 complexity=complexity.value
             )
             session_id = session.session_id
@@ -180,6 +181,7 @@ def register_simplified_tools(
     @rate_limited(max_requests=60, window_seconds=60)
     async def rethinking(
         session_id: str,
+        llm_model_name: str,
         thought_content: str,
         thought_number: int = 2,
         estimated_total_thoughts: int = 5,
@@ -208,6 +210,11 @@ def register_simplified_tools(
         history = orchestrator.memory.get_session_history(session_id)
         complexity = TaskComplexity(getattr(session, 'complexity', 'simple'))
         category = getattr(session, 'primary_category', 'GENERIC')
+        
+        # Update session model_id with the currently reporting model
+        if llm_model_name and session.model_id != llm_model_name:
+            session.model_id = llm_model_name
+            orchestrator.memory.update_session(session)
         
         # Determine strategy
         if strategy.lower() == "auto":
