@@ -8,7 +8,8 @@ from datetime import datetime
 # Ensure the project root is in sys.path for internal module resolution
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import APIKeyHeader
 from contextlib import asynccontextmanager
 import uvicorn
 
@@ -34,6 +35,7 @@ from src.core.services.complexity import ComplexityService
 from src.core.services.guidance import GuidanceService
 from src.core.services.orchestration import OrchestrationService
 from src.infrastructure.llm.client import LLMClient
+from src.core.services.identity import IdentityService
 
 # API Layer / Tools
 from src.tools.simplified_tools import register_simplified_tools
@@ -72,13 +74,17 @@ def bootstrap():
     orchestration_service = OrchestrationService(settings)
     llm_client = LLMClient(settings)
     
+    identity_service = IdentityService()
+    identity_service.provision_assets()
+    
     fusion_orchestrator = FusionOrchestrator(
         memory=memory_manager,
         scoring=scoring_engine,
         sequential=sequential_engine,
         orchestration=orchestration_service,
         llm=llm_client,
-        guidance=guidance_service
+        guidance=guidance_service,
+        identity=identity_service
     )
     
     automatic_router = AutomaticPipelineRouter(scoring_engine=scoring_engine)
@@ -89,7 +95,8 @@ def bootstrap():
         fusion_orchestrator=fusion_orchestrator,
         orchestration=orchestration_service,
         llm=llm_client,
-        guidance=guidance_service
+        guidance=guidance_service,
+        identity=identity_service
     )
     
     master_orchestrator = CognitiveOrchestrator(
@@ -97,7 +104,8 @@ def bootstrap():
         sequential_engine=sequential_engine,
         registry=engine_registry,
         fusion_engine=fusion_orchestrator,
-        router=automatic_router
+        router=automatic_router,
+        identity=identity_service
     )
     
     return {
@@ -131,11 +139,22 @@ register_export_tools(
 
 app = FastAPI(title="CCT Cognitive OS API")
 
-@app.get("/health")
+# Security Definition
+X_API_KEY = APIKeyHeader(name="X-API-KEY", auto_error=False)
+
+async def get_api_key(api_key_header: str = Depends(X_API_KEY)):
+    if api_key_header != settings.dashboard_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not validate credentials"
+        )
+    return api_key_header
+
+@app.get("/health", dependencies=[Depends(get_api_key)])
 async def health():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(get_api_key)])
 async def status():
     uptime = time.time() - START_TIME
     
@@ -166,7 +185,12 @@ async def status():
 
 # MCP Mount Configuration
 # The http_app() provides the Starlette/ASGI app for modern HTTP/SSE
-mcp_app = mcp_instance.http_app(path="/sync")
+mcp_path = "/sync"
+if settings.mcp_secret:
+    mcp_path = f"/sync/{settings.mcp_secret}"
+    logger.info(f"Custom MCP Secret Path activated: {mcp_path}")
+
+mcp_app = mcp_instance.http_app(path=mcp_path)
 app.mount("/cognitive-api/v1", mcp_app)
 # Sync the lifespan for session initialization
 app.router.lifespan_context = mcp_app.lifespan
@@ -176,7 +200,12 @@ def main():
     
     if transport in ("sse", "http"):
         logger.info(f"Launching FastAPI Host on {settings.host}:{settings.port}...")
-        logger.info(f"SSE Endpoint: http://{settings.host}:{settings.port}/cognitive-api/v1/sync")
+        mcp_uri = f"http://{settings.host}:{settings.port}/cognitive-api/v1/sync"
+        if settings.mcp_secret:
+            mcp_uri = f"{mcp_uri}/{settings.mcp_secret}"
+        
+        logger.info(f"SSE Endpoint: {mcp_uri}")
+        logger.info(f"Dashboard Security: ACTIVE (X-API-KEY)")
         uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
     else:
         # Fallback to standard STDIO transport

@@ -18,6 +18,8 @@ class Settings:
     db_path: str
     pricing_path: str
     default_model: str
+    dashboard_api_key: str
+    mcp_secret: str | None
     # User operational preferences
     max_thoughts: int
     max_content_length: int
@@ -142,6 +144,10 @@ def load_settings() -> Settings:
     if not forex_api_url:
         raise ValueError("Invalid forex API URL")
 
+    # Security Configuration
+    dashboard_api_key = os.getenv("CCT_DASHBOARD_API_KEY", "cct-dev-token-2026").strip()
+    mcp_secret = os.getenv("CCT_MCP_SECRET", "").strip() or None
+
     # Tool Group Configuration
     default_groups = "core,primitive,hybrid,hitl"
     enabled_groups_raw = os.getenv("CCT_ENABLED_TOOL_GROUPS", default_groups).strip().lower()
@@ -165,6 +171,8 @@ def load_settings() -> Settings:
         forex_cache_ttl=forex_cache_ttl,
         forex_default_rate=forex_default_rate,
         forex_api_url=forex_api_url,
+        dashboard_api_key=dashboard_api_key,
+        mcp_secret=mcp_secret,
         enabled_tool_groups=enabled_tool_groups,
         llm_provider=os.getenv("CCT_LLM_PROVIDER", "").strip().lower() or None,
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,

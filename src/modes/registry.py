@@ -18,7 +18,10 @@ from src.engines.fusion.orchestrator import FusionOrchestrator
 # New Services
 from src.core.services.orchestration import OrchestrationService
 from src.infrastructure.llm.client import LLMClient
+from src.core.services.orchestration import OrchestrationService
+from src.infrastructure.llm.client import LLMClient
 from src.core.services.guidance import GuidanceService
+from src.core.services.identity import IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,8 @@ class CognitiveEngineRegistry:
         fusion_orchestrator: FusionOrchestrator,
         orchestration: OrchestrationService,
         llm: LLMClient,
-        guidance: GuidanceService
+        guidance: GuidanceService,
+        identity: IdentityService
     ):
         self.memory = memory_manager
         self.sequential = sequential_engine
@@ -43,6 +47,7 @@ class CognitiveEngineRegistry:
         self.orchestration = orchestration
         self.llm = llm
         self.guidance = guidance
+        self.identity = identity
         self._engines: Dict[ThinkingStrategy, BaseCognitiveEngine] = {}
         self._initialize_registry()
 
@@ -59,7 +64,11 @@ class CognitiveEngineRegistry:
                     self.fusion,
                     self.orchestration,
                     self.llm,
-                    self.guidance
+                    self.fusion,
+                    self.orchestration,
+                    self.llm,
+                    self.guidance,
+                    self.identity
                 )
                 logger.info(f"Registry: Specialized Hybrid registered [{strategy.value}]")
                 continue
@@ -82,16 +91,17 @@ class CognitiveEngineRegistry:
                         self.sequential,
                         self.orchestration,
                         self.llm,
-                        self.guidance
+                        self.guidance,
+                        self.identity
                     )
                 else:
-                    self._engines[strategy] = engine_class(self.memory, self.sequential)
+                    self._engines[strategy] = engine_class(self.memory, self.sequential, self.identity)
                     
                 logger.info(f"Registry: Specialized Hybrid registered [%s]", strategy.value)
             else:
                 # Wrap all primitives into the Dynamic Engine
                 self._engines[strategy] = DynamicPrimitiveEngine(
-                    self.memory, self.sequential, strategy
+                    self.memory, self.sequential, self.identity, strategy
                 )
                 logger.debug(f"Registry: Adaptive Primitive registered [%s]", strategy.value)
 

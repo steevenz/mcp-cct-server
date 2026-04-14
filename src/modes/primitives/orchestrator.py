@@ -23,8 +23,8 @@ class DynamicPrimitiveEngine(BaseCognitiveEngine):
     Uses token-optimized scoring for efficient analysis.
     """
 
-    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, strategy: ThinkingStrategy):
-        super().__init__(memory_manager, sequential_engine)
+    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService, strategy: ThinkingStrategy):
+        super().__init__(memory_manager, sequential_engine, identity_service)
         self._dynamic_strategy = strategy
         self.archiver = PatternArchiver(memory_manager)
         # Initialize token-optimized scoring engine

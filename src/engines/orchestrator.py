@@ -16,6 +16,7 @@ from src.engines.fusion.router import AutomaticPipelineRouter
 from src.engines.skills_loader import SkillsLoader
 from src.analysis.summarization import compress_session_context
 from src.utils.pricing import pricing_manager, ForexService
+from src.core.services.identity import IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +33,19 @@ class CognitiveOrchestrator:
         sequential_engine: SequentialEngine, 
         registry: CognitiveEngineRegistry,
         fusion_engine: FusionOrchestrator,
-        router: AutomaticPipelineRouter
+        router: AutomaticPipelineRouter,
+        identity: IdentityService
     ):
         self.memory = memory_manager
         self.sequential = sequential_engine
         self.registry = registry
         self.fusion = fusion_engine
         self.router = router
+        self.identity = identity
         self.skills_loader = SkillsLoader()
         self.hitl_enforcer = HITLEnforcer(memory_manager)
-        logger.info("Cognitive Orchestrator (with Fusion/Router/HITL/Skills) initialized.")
+        # Identity service is already provisioned by bootstrap
+        logger.info("Cognitive Orchestrator (with Identity/Fusion/Router/HITL/Skills) initialized.")
 
     async def execute_strategy(
         self, 
@@ -178,6 +182,9 @@ class CognitiveOrchestrator:
         """
         logger.info(f"Initializing new CCT session. Profile: {profile}")
         
+        # [PHASE 0] Identity Layer Ignition (Digital Symbiosis)
+        identity_context = self.identity.load_identity()
+        
         # [PHASE 0] Model Detection
         if not model_id:
             # Order of priority: ENV[LLM_MODEL] -> ENV[CCT_DEFAULT_MODEL] -> Settings.default_model -> Baseline fallback
@@ -219,6 +226,7 @@ class CognitiveOrchestrator:
             
             # 4. ENRICH SESSION STATE
             session.suggested_pipeline = suggested_pipeline
+            session.identity_layer = identity_context
             session.knowledge_injection = {
                 "phase_0_injection": injection_result.injection_context,
                 "golden_thinking_patterns": [p.model_dump(mode="json") for p in injected_patterns],

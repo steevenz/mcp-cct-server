@@ -9,6 +9,7 @@ from src.core.models.domain import CCTSessionState, EnhancedThought
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.analysis.scoring_engine import ScoringEngine
+from src.core.services.identity import IdentityService
 from src.core.validators import validate_session_id
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
@@ -19,9 +20,10 @@ class BaseCognitiveEngine(ABC):
     Enforces architectural consistency across primitive and hybrid modes.
     """
 
-    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine):
+    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService):
         self.memory = memory_manager
         self.sequential = sequential_engine
+        self.identity = identity_service
         self.scoring = ScoringEngine()
 
     @property
@@ -108,3 +110,18 @@ class BaseCognitiveEngine(ABC):
         thought.summary = self.scoring.generate_summary(thought.content)
         self.memory.save_thought(session_id, thought)
         self._link_thought_to_parent(session_id, thought)
+
+    def _get_identity_decorated_system_prompt(self, session_id: str, base_system_prompt: str) -> str:
+        """
+        Decorates a base system prompt with the session's Identity Layer (Mindset & Soul).
+        Implements the 'Cognitive Rail' pattern.
+        """
+        session = self._get_session_or_raise(session_id)
+        if not session.identity_layer:
+            # Fallback to defaults if session somehow missing identity
+            identity = self.identity.load_identity()
+        else:
+            identity = session.identity_layer
+            
+        prefix = self.identity.format_system_prefix(identity)
+        return f"{prefix}\n\n{base_system_prompt}"
