@@ -421,3 +421,39 @@ class MemoryManager:
             _audit_log("SESSION_DELETE", session_id)
             logger.info(f"Session {session_id} and its history purged.")
         return success
+
+    def get_aggregate_usage(self) -> Dict[str, Any]:
+        """
+        Calculates global token and cost usage across all sessions in the database.
+        Returns a dictionary with sum of prompt_tokens, completion_tokens, and costs.
+        """
+        totals = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cost_usd": 0.0,
+            "cost_idr": 0.0,
+            "session_count": 0
+        }
+        
+        with self._get_connection() as conn:
+            cursor = conn.execute("SELECT data FROM sessions")
+            rows = cursor.fetchall()
+            
+            totals["session_count"] = len(rows)
+            for row in rows:
+                try:
+                    data = json.loads(row[0])
+                    totals["prompt_tokens"] += data.get("total_prompt_tokens", 0)
+                    totals["completion_tokens"] += data.get("total_completion_tokens", 0)
+                    totals["cost_usd"] += data.get("total_cost_usd", 0.0)
+                    totals["cost_idr"] += data.get("total_cost_idr", 0.0)
+                except (json.JSONDecodeError, KeyError, TypeError):
+                    continue
+            
+            totals["total_tokens"] = totals["prompt_tokens"] + totals["completion_tokens"]
+            # Round financial totals
+            totals["cost_usd"] = round(totals["cost_usd"], 8)
+            totals["cost_idr"] = round(totals["cost_idr"], 2)
+            
+        return totals

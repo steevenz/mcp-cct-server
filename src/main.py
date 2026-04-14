@@ -2,9 +2,15 @@ import logging
 import sys
 import os
 import signal
+import time
+from datetime import datetime
 
 # Ensure the project root is in sys.path for internal module resolution
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import uvicorn
 
 # Assuming fastmcp is installed and used as the underlying MCP protocol wrapper
 from mcp.server.fastmcp import FastMCP
@@ -45,60 +51,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger("cct-mcp-server")
 
-def main():
-    """
-    Application Entry Point.
-    Bootstraps the dependencies, initializes the Cognitive Engine Registry,
-    registers all MCP tools (Cognitive, Session, Export), and starts the server.
-    """
-    logger.info("Bootstrapping Creative Critical Thinking (CCT) MCP Server...")
+START_TIME = time.time()
 
-    # 1. Load Configuration from Environment
-    try:
-        settings = load_settings()
-        logger.info(f"Configuration loaded: {settings.server_name} @ {settings.host}:{settings.port}")
-    except Exception as e:
-        logger.error(f"Failed to load configuration: {e}")
-        sys.exit(1)
-
-    # Reconfigure logging level based on settings
+def bootstrap():
+    """
+    Bootstraps the dependencies and initializes the central orchestrator.
+    Returns a dictionary of initialized components.
+    """
+    logger.info("Bootstrapping CCT Cognitive Infrastructure...")
+    
+    settings = load_settings()
     logging.getLogger().setLevel(getattr(logging, settings.log_level))
-
-    # Setup signal handlers for graceful shutdown
-    def _signal_handler(signum, frame):
-        logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        sys.exit(0)
     
-    signal.signal(signal.SIGTERM, _signal_handler)
-    signal.signal(signal.SIGINT, _signal_handler)
-
-    # 2. Initialize the MCP Server Instance
-    mcp_instance = FastMCP(settings.server_name, host=settings.host, port=settings.port)
-
-    # 3. Dependency Injection: Instantiate Core Engines & Hybrid Services
-    logger.info("Initializing Core Cognitive Infrastructure...")
-    try:
-        memory_manager = MemoryManager()
-        sequential_engine = SequentialEngine(memory_manager)
-        scoring_engine = ScoringEngine()
-        
-        # New Hybrid Services Initialization
-        complexity_service = ComplexityService()
-        guidance_service = GuidanceService()
-        orchestration_service = OrchestrationService(settings)
-        llm_client = LLMClient(settings)
-        
-        # Validate critical components
-        if not memory_manager or not sequential_engine or not scoring_engine:
-            raise RuntimeError("Failed to initialize critical engine components")
-            
-        logger.info("Core engines and Hybrid services initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize core engines: {e}")
-        sys.exit(1)
+    memory_manager = MemoryManager()
+    sequential_engine = SequentialEngine(memory_manager)
+    scoring_engine = ScoringEngine()
     
-    # 4. Dependency Injection: Initialize Fusion & Routing Services
-    logger.info("Initializing Fusion Orchestrator and Dynamic Router...")
+    complexity_service = ComplexityService()
+    guidance_service = GuidanceService()
+    orchestration_service = OrchestrationService(settings)
+    llm_client = LLMClient(settings)
+    
     fusion_orchestrator = FusionOrchestrator(
         memory=memory_manager,
         scoring=scoring_engine,
@@ -107,12 +80,9 @@ def main():
         llm=llm_client,
         guidance=guidance_service
     )
-    automatic_router = AutomaticPipelineRouter(
-        scoring_engine=scoring_engine
-    )
-
-    # 5. Dependency Injection: Initialize the Central Engine Registry
-    logger.info("Loading Cognitive Strategies into Registry...")
+    
+    automatic_router = AutomaticPipelineRouter(scoring_engine=scoring_engine)
+    
     engine_registry = CognitiveEngineRegistry(
         memory_manager=memory_manager,
         sequential_engine=sequential_engine,
@@ -121,9 +91,7 @@ def main():
         llm=llm_client,
         guidance=guidance_service
     )
-
-    # 6. Expose the MCP Tools via the Master Orchestrator
-    logger.info("Initializing Master Orchestrator Facade...")
+    
     master_orchestrator = CognitiveOrchestrator(
         memory_manager=memory_manager,
         sequential_engine=sequential_engine,
@@ -131,41 +99,89 @@ def main():
         fusion_engine=fusion_orchestrator,
         router=automatic_router
     )
+    
+    return {
+        "settings": settings,
+        "mcp_instance": FastMCP(settings.server_name, host=settings.host, port=settings.port),
+        "orchestrator": master_orchestrator,
+        "complexity_service": complexity_service
+    }
 
-    logger.info("Registering API boundaries (MCP Tools)...")
+# Bootstrap once
+components = bootstrap()
+mcp_instance = components["mcp_instance"]
+settings = components["settings"]
 
-    # 6a. Register Simplified Tools
-    register_simplified_tools(
-        mcp=mcp_instance,
-        orchestrator=master_orchestrator,
-        settings=settings,
-        complexity_service=complexity_service
-    )
+# Register Tools
+register_simplified_tools(
+    mcp=mcp_instance,
+    orchestrator=components["orchestrator"],
+    settings=settings,
+    complexity_service=components["complexity_service"]
+)
+register_export_tools(
+    mcp=mcp_instance,
+    orchestrator=components["orchestrator"],
+    settings=settings
+)
 
-    # 6b. Register Export Tools
-    register_export_tools(
-        mcp=mcp_instance,
-        orchestrator=master_orchestrator,
-        settings=settings
-    )
+# ============================================================================
+# FASTAPI WRAPPER (ELITE WINDOWS ENDPOINT)
+# ============================================================================
 
-    logger.info("======================================================")
-    logger.info(f"CCT MCP Server is LIVE (Hybrid Orchestration Mode).")
-    logger.info(f"Server Name: {settings.server_name}")
-    logger.info(f"Transport Protocol -> {settings.transport.upper()}")
-    logger.info(f"LLM Provider -> {settings.llm_provider or 'NONE (Guided Fallback)'}")
-    logger.info("======================================================")
+app = FastAPI(title="CCT Cognitive OS API")
 
-    try:
-        transport = settings.transport.strip().lower()
-        if transport == "http":
-            transport = "sse"
-        mcp_instance.run(transport=transport)
-    except KeyboardInterrupt:
-        logger.info("Shutdown signal received. Terminating gracefully...")
-    except Exception as e:
-        logger.exception("A fatal runtime error occurred during server execution.")
-        sys.exit(1)
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/status")
+async def status():
+    uptime = time.time() - START_TIME
+    
+    # Extract global usage stats from MemoryManager
+    memory_manager = components.get("orchestrator").memory_manager
+    usage_stats = memory_manager.get_aggregate_usage()
+    
+    return {
+        "server": settings.server_name,
+        "uptime_seconds": int(uptime),
+        "llm_provider": settings.llm_provider or "GUIDED",
+        "transport": settings.transport.upper(),
+        "log_level": settings.log_level,
+        "global_usage": {
+            "tokens": {
+                "input": usage_stats["prompt_tokens"],
+                "output": usage_stats["completion_tokens"],
+                "total": usage_stats["total_tokens"]
+            },
+            "costs": {
+                "usd": usage_stats["cost_usd"],
+                "idr": usage_stats["cost_idr"]
+            },
+            "total_sessions": usage_stats["session_count"]
+        },
+        "features": ["hybrid_orchestration", "actor_critic", "memory_persistence", "financial_telemetry"]
+    }
+
+# MCP Mount Configuration
+# The http_app() provides the Starlette/ASGI app for modern HTTP/SSE
+mcp_app = mcp_instance.http_app(path="/sync")
+app.mount("/cognitive-api/v1", mcp_app)
+# Sync the lifespan for session initialization
+app.router.lifespan_context = mcp_app.lifespan
+
+def main():
+    transport = settings.transport.strip().lower()
+    
+    if transport in ("sse", "http"):
+        logger.info(f"Launching FastAPI Host on {settings.host}:{settings.port}...")
+        logger.info(f"SSE Endpoint: http://{settings.host}:{settings.port}/cognitive-api/v1/sync")
+        uvicorn.run(app, host=settings.host, port=settings.port, log_level="info")
+    else:
+        # Fallback to standard STDIO transport
+        logger.info("Launching standard STDIO transport...")
+        mcp_instance.run(transport="stdio")
 
 if __name__ == "__main__":
     main()
