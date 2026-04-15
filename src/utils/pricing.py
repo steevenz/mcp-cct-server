@@ -170,6 +170,8 @@ class PricingManager:
         Calculates granular costs in USD and IDR.
         Returns a dictionary with input, output, and total costs.
         """
+        pricing = self._load_model_pricing(model_id)
+        
         # [PESSIMISTIC FALLBACK] If specific model resolution fails, use the ai-common-model average
         if not pricing:
             logger.info(f"Using 'ai-common-model' fallback for: {model_id}")

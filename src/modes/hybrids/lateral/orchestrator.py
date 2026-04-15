@@ -14,17 +14,20 @@ from src.modes.base import BaseCognitiveEngine
 from .schemas import LateralPivotInput
 
 logger = logging.getLogger(__name__)
-
+class LateralEngine(BaseCognitiveEngine):
     """
-    def __init__(self, memory_manager: Any, sequential_engine: Any, identity_service: Any):
-        super().__init__(memory_manager, sequential_engine, identity_service)
+    Engine for Lateral Thinking and Provocation.
+    Injects an 'unconventional pivot' into the thinking process to escape local optima.
+    """
+    def __init__(self, memory_manager: Any, sequential_engine: Any, identity_service: Any, scoring_engine: Any):
+        super().__init__(memory_manager, sequential_engine, identity_service, scoring_engine)
 
     @property
     def strategy_type(self) -> ThinkingStrategy:
         """Binds this engine to the UNCONVENTIONAL_PIVOT strategy."""
         return ThinkingStrategy.UNCONVENTIONAL_PIVOT
 
-    def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Executes the lateral pivot by injecting a provocation thought into the sequence.
         """

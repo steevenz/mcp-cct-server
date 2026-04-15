@@ -11,7 +11,8 @@ from src.core.constants import DEFAULT_TP_THRESHOLD, MAX_ANALYSIS_TOKEN_BUDGET
 from src.modes.base import BaseCognitiveEngine
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
-from src.analysis.scoring_engine import ScoringEngine
+from src.core.services.analysis.scoring import ScoringService
+from src.core.models.analysis import AnalysisConfig
 from src.engines.memory.thinking_patterns import PatternArchiver
 
 logger = logging.getLogger(__name__)
@@ -21,20 +22,45 @@ class DynamicPrimitiveEngine(BaseCognitiveEngine):
     A dynamic factory engine capable of processing all primitive cognitive strategies.
     Eliminates code duplication while maintaining strict architectural contracts.
     Uses token-optimized scoring for efficient analysis.
+
+    ## 4-Stage Primitive Processing Lifecycle
+
+    This engine implements the atomic cognitive processing lifecycle defined in CCT v5.0 §2.A:
+
+    **Stage 1: Contextual Injection**
+    - Retrieves state from SequentialEngine to understand position in branching "Tree of Thought"
+    - Ensures the primitive worker has context of previous thoughts and branching structure
+    - Implemented via `sequential.process_sequence_step()` at lines 44-53
+
+    **Stage 2: Hardened Validation**
+    - Every thought is immediately audited by ScoringService
+    - Receives quantitative scores for: Clarity, Coherence, Novelty, and Evidence
+    - Token-optimized with 4000 token budget for analysis
+    - Implemented via `scoring.analyze_thought()` at lines 71-75
+
+    **Stage 3: Cognitive Evolution**
+    - PatternArchiver automatically promotes elite thoughts (logical_coherence > 0.9)
+    - Elite thoughts become Golden Thinking Patterns for future reuse
+    - Implements Long-Term Potentiation (LTP) - patterns strengthen with use
+    - Implemented via `archiver.process_thought()` at line 90
+
+    **Stage 4: Early Convergence Detection**
+    - Detects "Breakthrough" thoughts that meet victory conditions
+    - Triggers early stop to save tokens when solution is found
+    - Uses dynamic threshold (DEFAULT_TP_THRESHOLD) for elite thought detection
+    - Implemented via early_convergence logic at lines 92-96
     """
 
-    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService, strategy: ThinkingStrategy):
-        super().__init__(memory_manager, sequential_engine, identity_service)
+    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService, scoring_engine: ScoringService, strategy: ThinkingStrategy):
+        super().__init__(memory_manager, sequential_engine, identity_service, scoring_engine)
         self._dynamic_strategy = strategy
         self.archiver = PatternArchiver(memory_manager)
-        # Initialize token-optimized scoring engine
-        self.scoring = ScoringEngine()
 
     @property
     def strategy_type(self) -> ThinkingStrategy:
         return self._dynamic_strategy
 
-    def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
         try:
             validated_input = CCTThinkStepInput(**input_payload)
         except ValidationError as e:

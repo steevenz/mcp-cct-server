@@ -83,6 +83,13 @@ class CCTSessionState(BaseModel):
     identity_layer: Dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     
+    # HITL Fields
+    hitl_triggered_at: Optional[str] = Field(default=None)
+    authorized_by: Optional[str] = Field(default=None)
+    executive_summary: Optional[Dict[str, Any]] = Field(default=None)
+    cleared_at: Optional[str] = Field(default=None)
+    authorization_note: Optional[str] = Field(default=None)
+    
     # Multi-Scenario Context
     detected_categories: Dict[str, float] = Field(
         default_factory=dict, 

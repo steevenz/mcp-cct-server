@@ -13,12 +13,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src.core.config import load_settings
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
-from src.analysis.scoring_engine import ScoringEngine
+from src.core.services.analysis.scoring import ScoringService
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.engines.fusion.router import AutomaticPipelineRouter
+from src.core.services.routing import IntelligenceRouter
 from src.modes.registry import CognitiveEngineRegistry
 from src.engines.orchestrator import CognitiveOrchestrator
-from src.tools.simplified_tools import register_simplified_tools
+from src.tools.simplified import register_simplified_tools
 
 # Mock FastMCP for testing
 class MockFastMCP:
@@ -50,7 +50,7 @@ async def run_server_smoke():
     try:
         memory_manager = MemoryManager()
         sequential_engine = SequentialEngine(memory_manager)
-        scoring_engine = ScoringEngine()
+        scoring = ScoringService()
         print("✅ Core engines initialized")
     except Exception as e:
         print(f"❌ Failed to initialize engines: {e}")
@@ -60,10 +60,10 @@ async def run_server_smoke():
     try:
         fusion_orchestrator = FusionOrchestrator(
             memory=memory_manager,
-            scoring=scoring_engine,
+            scoring=scoring,
             sequential=sequential_engine
         )
-        automatic_router = AutomaticPipelineRouter(scoring_engine=scoring_engine)
+        automatic_router = AutomaticPipelineRouter(scoring=scoring)
         print("✅ Fusion services initialized")
     except Exception as e:
         print(f"❌ Failed to initialize fusion services: {e}")

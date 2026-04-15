@@ -7,14 +7,14 @@ from typing import List, Dict, Any, Optional
 from src.core.models.enums import ThinkingStrategy, ThoughtType
 from src.core.models.domain import EnhancedThought, CCTSessionState
 from src.engines.memory.manager import MemoryManager
-from src.analysis.scoring_engine import ScoringEngine
+from src.core.services.analysis.scoring import ScoringService
 from src.engines.sequential.engine import SequentialEngine
 
 # New Services
-from src.core.services.orchestration import OrchestrationService
-from src.infrastructure.llm.client import LLMClient
-from src.core.services.guidance import GuidanceService
-from src.core.services.identity import IdentityService
+from src.core.services.orchestration.autonomous import AutonomousService
+from src.core.services.llm.client import ClientService as ThoughtGenerationService
+from src.core.services.guidance.guidance import GuidanceService
+from src.core.services.user.identity import UserIdentityService as IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ class FusionOrchestrator:
     def __init__(
         self,
         memory: MemoryManager,
-        scoring: ScoringEngine,
+        scoring: ScoringService,
         sequential: SequentialEngine,
-        orchestration: OrchestrationService,
-        llm: LLMClient,
+        orchestration: AutonomousService,
+        thought_service: ThoughtGenerationService,
         guidance: GuidanceService,
         identity: IdentityService
     ):
@@ -42,7 +42,7 @@ class FusionOrchestrator:
         self.scoring = scoring
         self.sequential = sequential
         self.orchestration = orchestration
-        self.llm = llm
+        self.thought_service = thought_service
         self.guidance = guidance
         self.identity = identity
 
@@ -99,7 +99,7 @@ class FusionOrchestrator:
         if mode == "autonomous":
             logger.info(f"[FUSION] Executing autonomous synthesis for session {session_id}")
             fusion_sys_prompt = "You are the CCT Fusion Engine. Synthesize the provided thoughts into a unified conclusion."
-            fusion_content = await self.llm.generate_thought(
+            fusion_content = await self.thought_service.generate_thought(
                 prompt=fusion_prompt,
                 system_prompt=self._get_identity_decorated_system_prompt(session_id, fusion_sys_prompt)
             )
@@ -107,7 +107,7 @@ class FusionOrchestrator:
         else:
             logger.info(f"[FUSION] Providing guidance for manual synthesis in session {session_id}")
             fusion_content = self.guidance.format_guidance_message(ThinkingStrategy.INTEGRATIVE)
-            thought_type = ThoughtType.PROTOCOL # Use PROTOCOL instead of SYNTHESIS for guided placeholder
+            thought_type = ThoughtType.PROTOCOL # Use PROTOCOL type for guided mode to indicate manual synthesis step
 
         # [AUTOMATIC PIPELINE] Creating the synthesis thought
         thought_number = session.current_thought_number + 1

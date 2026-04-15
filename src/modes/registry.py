@@ -6,22 +6,24 @@ from src.modes.base import BaseCognitiveEngine
 from src.modes.primitives.orchestrator import DynamicPrimitiveEngine
 
 # Import Hybrids
-from src.modes.hybrids.actor_critic.orchestrator import ActorCriticEngine
+from src.modes.hybrids.critics.actor.orchestrator import ActorCriticEngine
+from src.modes.hybrids.critics.council.orchestrator import CouncilOfCriticsEngine
 from src.modes.hybrids.lateral.orchestrator import LateralEngine
 from src.modes.hybrids.temporal.orchestrator import LongTermHorizonEngine
-from src.modes.hybrids.multi_agent.orchestrator import MultiAgentFusionEngine
+from src.modes.hybrids.multiagents.orchestrator import MultiAgentFusionEngine
 
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
 
 # New Services
-from src.core.services.orchestration import OrchestrationService
-from src.infrastructure.llm.client import LLMClient
-from src.core.services.orchestration import OrchestrationService
-from src.infrastructure.llm.client import LLMClient
-from src.core.services.guidance import GuidanceService
-from src.core.services.identity import IdentityService
+from src.core.services.orchestration.autonomous import AutonomousService
+from src.core.services.llm.client import ClientService as ThoughtGenerationService
+from src.core.services.llm.critic import CriticService as AdversarialReviewService
+from src.core.services.guidance.guidance import GuidanceService
+from src.core.services.user.identity import UserIdentityService as IdentityService
+from src.core.services.analysis.scoring import ScoringService
+from src.core.models.analysis import AnalysisConfig
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +38,25 @@ class CognitiveEngineRegistry:
         memory_manager: MemoryManager, 
         sequential_engine: SequentialEngine,
         fusion_orchestrator: FusionOrchestrator,
-        orchestration: OrchestrationService,
-        llm: LLMClient,
+        autonomous: AutonomousService,
+        thought_service: ThoughtGenerationService,
         guidance: GuidanceService,
-        identity: IdentityService
+        identity: IdentityService,
+        scoring_engine: ScoringService,
+        review_service: AdversarialReviewService = None
     ):
         self.memory = memory_manager
         self.sequential = sequential_engine
         self.fusion = fusion_orchestrator
-        self.orchestration = orchestration
-        self.llm = llm
+        self.autonomous = autonomous
+        self.thought_service = thought_service
         self.guidance = guidance
         self.identity = identity
+        self.scoring = scoring_engine
+        # If review_service not provided, create it with identity_service for Digital Twin
+        from src.core.config import load_settings
+        settings = load_settings()
+        self.review_service = review_service or AdversarialReviewService(settings, identity_service=identity)
         self._engines: Dict[ThinkingStrategy, BaseCognitiveEngine] = {}
         self._initialize_registry()
 
@@ -62,13 +71,11 @@ class CognitiveEngineRegistry:
                     self.memory, 
                     self.sequential, 
                     self.fusion,
-                    self.orchestration,
-                    self.llm,
-                    self.fusion,
-                    self.orchestration,
-                    self.llm,
+                    self.autonomous,
+                    self.thought_service,
                     self.guidance,
-                    self.identity
+                    self.identity,
+                    self.scoring
                 )
                 logger.info(f"Registry: Specialized Hybrid registered [{strategy.value}]")
                 continue
@@ -76,6 +83,7 @@ class CognitiveEngineRegistry:
             # Mapping for other Hybrids
             hybrid_mapping = {
                 ThinkingStrategy.ACTOR_CRITIC_LOOP: ActorCriticEngine,
+                ThinkingStrategy.COUNCIL_OF_CRITICS: CouncilOfCriticsEngine,
                 ThinkingStrategy.UNCONVENTIONAL_PIVOT: LateralEngine,
                 ThinkingStrategy.LONG_TERM_HORIZON: LongTermHorizonEngine,
             }
@@ -84,24 +92,37 @@ class CognitiveEngineRegistry:
                 # Initialize specific hybrids
                 engine_class = hybrid_mapping[strategy]
                 
-                # [LEGO] Specialized injection for Actor-Critic which now supports Hybrid mode
+                # [LEGO] Specialized injection for Hybrid modes that require LLM services
                 if strategy == ThinkingStrategy.ACTOR_CRITIC_LOOP:
                     self._engines[strategy] = engine_class(
                         self.memory, 
                         self.sequential,
-                        self.orchestration,
-                        self.llm,
+                        self.autonomous,
+                        self.thought_service,
                         self.guidance,
-                        self.identity
+                        self.identity,
+                        self.scoring,
+                        self.review_service  # Pass external review service for cross-model audit
+                    )
+                elif strategy == ThinkingStrategy.COUNCIL_OF_CRITICS:
+                    self._engines[strategy] = engine_class(
+                        self.memory, 
+                        self.sequential,
+                        self.autonomous,
+                        self.thought_service,
+                        self.guidance,
+                        self.identity,
+                        self.scoring,
+                        self.review_service
                     )
                 else:
-                    self._engines[strategy] = engine_class(self.memory, self.sequential, self.identity)
+                    self._engines[strategy] = engine_class(self.memory, self.sequential, self.identity, self.scoring)
                     
                 logger.info(f"Registry: Specialized Hybrid registered [%s]", strategy.value)
             else:
                 # Wrap all primitives into the Dynamic Engine
                 self._engines[strategy] = DynamicPrimitiveEngine(
-                    self.memory, self.sequential, self.identity, strategy
+                    self.memory, self.sequential, self.identity, self.scoring, strategy
                 )
                 logger.debug(f"Registry: Adaptive Primitive registered [%s]", strategy.value)
 

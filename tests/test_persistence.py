@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.getcwd())))
 
 from src.engines.memory.manager import MemoryManager
 from src.core.models.enums import CCTProfile, ThoughtType, ThinkingStrategy
-from src.tools.simplified_tools import TaskComplexity
+from src.tools.simplified import TaskComplexity
 from src.core.models.contexts import SequentialContext
 from src.core.models.domain import EnhancedThought
 

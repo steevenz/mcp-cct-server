@@ -22,12 +22,15 @@ class LongTermHorizonEngine(BaseCognitiveEngine):
     NOW (Immediate execution), NEXT (Scaling phase), and LATER (Long-term maintenance/debt).
     """
 
+    def __init__(self, memory_manager: Any, sequential_engine: Any, identity_service: Any, scoring_engine: Any):
+        super().__init__(memory_manager, sequential_engine, identity_service, scoring_engine)
+
     @property
     def strategy_type(self) -> ThinkingStrategy:
         """Binds this engine to the LONG_TERM_HORIZON strategy."""
         return ThinkingStrategy.LONG_TERM_HORIZON
 
-    def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Executes the temporal projection by creating a structured framework thought.
         """

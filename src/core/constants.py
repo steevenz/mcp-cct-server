@@ -41,6 +41,7 @@ SESSION_TOKEN_LENGTH: int = 32  # bytes for secrets.token_urlsafe()
 # =============================================================================
 DEFAULT_DB_PATH: str = "database/cct_memory.db"
 DB_TIMEOUT_SECONDS: float = 5.0
+DEFAULT_IDENTITY_DIR: str = "configs/identity"
 
 # =============================================================================
 # Server Defaults

@@ -321,6 +321,31 @@ class MemoryManager:
             cursor = conn.execute("SELECT data FROM thinking_patterns ORDER BY rowid DESC")
             return [GoldenThinkingPattern.model_validate_json(row[0]) for row in cursor.fetchall()]
 
+    def get_thinking_patterns_by_usage(self, limit: int = 10) -> List[GoldenThinkingPattern]:
+        """Retrieves top N most used thinking patterns (LTP - strongest neural pathways)."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT data FROM thinking_patterns ORDER BY usage_count DESC LIMIT ?",
+                (limit,)
+            )
+            return [GoldenThinkingPattern.model_validate_json(row[0]) for row in cursor.fetchall()]
+
+    def get_thinking_pattern_by_thought_id(self, thought_id: str) -> Optional[GoldenThinkingPattern]:
+        """Find a thinking pattern by its original thought ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT data FROM thinking_patterns WHERE thought_id = ?",
+                (thought_id,)
+            )
+            row = cursor.fetchone()
+            if row:
+                return GoldenThinkingPattern.model_validate_json(row[0])
+        return None
+
+    def increment_pattern_usage(self, pattern_id: str) -> None:
+        """Increment the usage count of a pattern (alias for record_pattern_usage)."""
+        self.record_pattern_usage(pattern_id)
+
     def get_optimized_history(
         self, 
         session_id: str, 
@@ -457,3 +482,220 @@ class MemoryManager:
             totals["cost_idr"] = round(totals["cost_idr"], 2)
             
         return totals
+
+    # =========================================================================
+    # TREE OF THOUGHTS - Branch Management
+    # =========================================================================
+    
+    def get_branch_tree(self, session_id: str, root_thought_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get the tree structure of all branches in a session.
+        
+        If root_thought_id is provided, returns subtree from that node.
+        Otherwise returns full session tree.
+        """
+        history = self.get_session_history(session_id)
+        if not history:
+            return {"error": "Session not found or empty", "tree": {}}
+        
+        # Build tree structure
+        tree = {"nodes": {}, "root": root_thought_id or (history[0].id if history else None)}
+        
+        for thought in history:
+            tree["nodes"][thought.id] = {
+                "id": thought.id,
+                "content_preview": thought.content[:100] + "..." if len(thought.content) > 100 else thought.content,
+                "strategy": thought.strategy.value if hasattr(thought.strategy, 'value') else str(thought.strategy),
+                "thought_type": thought.thought_type.value if hasattr(thought.thought_type, 'value') else str(thought.thought_type),
+                "parent_id": thought.parent_id,
+                "children_ids": thought.children_ids,
+                "metrics": {
+                    "clarity": thought.metrics.clarity_score if thought.metrics else 0,
+                    "coherence": thought.metrics.logical_coherence if thought.metrics else 0,
+                    "evidence": thought.metrics.evidence_strength if thought.metrics else 0
+                },
+                "tags": thought.tags
+            }
+        
+        return {
+            "session_id": session_id,
+            "total_thoughts": len(history),
+            "tree": tree
+        }
+    
+    def compare_branches(self, session_id: str, branch_ids: List[str]) -> Dict[str, Any]:
+        """
+        Compare multiple branches by their leaf thoughts.
+        Returns comparison metrics for each branch.
+        """
+        history = self.get_session_history(session_id)
+        if not history:
+            return {"error": "Session not found", "comparison": []}
+        
+        # Build branch paths
+        thought_map = {t.id: t for t in history}
+        comparison = []
+        
+        for branch_id in branch_ids:
+            if branch_id not in thought_map:
+                comparison.append({
+                    "branch_id": branch_id,
+                    "error": "Branch not found"
+                })
+                continue
+            
+            # Trace branch path to root
+            path = []
+            current = thought_map[branch_id]
+            while current:
+                path.append(current)
+                if current.parent_id and current.parent_id in thought_map:
+                    current = thought_map[current.parent_id]
+                else:
+                    break
+            
+            path.reverse()
+            
+            # Calculate aggregate metrics
+            avg_coherence = sum(t.metrics.logical_coherence for t in path if t.metrics) / len(path) if path else 0
+            avg_evidence = sum(t.metrics.evidence_strength for t in path if t.metrics) / len(path) if path else 0
+            
+            comparison.append({
+                "branch_id": branch_id,
+                "path_length": len(path),
+                "root_id": path[0].id if path else None,
+                "leaf_id": branch_id,
+                "strategies_used": list(set(t.strategy.value for t in path if hasattr(t.strategy, 'value'))),
+                "avg_coherence": round(avg_coherence, 3),
+                "avg_evidence": round(avg_evidence, 3),
+                "strength_score": round((avg_coherence + avg_evidence) / 2, 3)
+            })
+        
+        # Rank by strength
+        comparison.sort(key=lambda x: x.get("strength_score", 0), reverse=True)
+        
+        return {
+            "session_id": session_id,
+            "branches_compared": len(branch_ids),
+            "comparison": comparison,
+            "best_branch": comparison[0]["branch_id"] if comparison and "branch_id" in comparison[0] else None
+        }
+    
+    def prune_branch(self, session_id: str, branch_root_id: str, reason: str = "pruned") -> Dict[str, Any]:
+        """
+        Prune (delete) an entire branch from the tree.
+        Removes the specified thought and all its descendants.
+        """
+        history = self.get_session_history(session_id)
+        if not history:
+            return {"success": False, "error": "Session not found"}
+        
+        thought_map = {t.id: t for t in history}
+        
+        if branch_root_id not in thought_map:
+            return {"success": False, "error": f"Branch root {branch_root_id} not found"}
+        
+        # Find all descendants (BFS)
+        to_prune = [branch_root_id]
+        pruned = []
+        visited = set()
+        
+        while to_prune:
+            current_id = to_prune.pop(0)
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            
+            if current_id in thought_map:
+                thought = thought_map[current_id]
+                pruned.append({
+                    "id": current_id,
+                    "strategy": thought.strategy.value if hasattr(thought.strategy, 'value') else str(thought.strategy)
+                })
+                
+                # Add children to queue
+                for child_id in thought.children_ids:
+                    if child_id not in visited:
+                        to_prune.append(child_id)
+        
+        # Actually delete from database
+        deleted_count = 0
+        with self._write_lock:
+            with self._get_connection() as conn:
+                try:
+                    conn.execute("BEGIN IMMEDIATE")
+                    for thought_id in visited:
+                        cursor = conn.execute(
+                            "DELETE FROM thoughts WHERE thought_id = ? AND session_id = ?",
+                            (thought_id, session_id)
+                        )
+                        deleted_count += cursor.rowcount
+                    conn.commit()
+                    
+                    _audit_log("BRANCH_PRUNE", session_id, f"Pruned {deleted_count} thoughts from branch {branch_root_id}. Reason: {reason}")
+                    
+                except sqlite3.Error as e:
+                    conn.rollback()
+                    logger.error(f"Failed to prune branch {branch_root_id}: {e}")
+                    return {"success": False, "error": str(e)}
+        
+        logger.info(f"[BRANCH] Pruned {deleted_count} thoughts from branch {branch_root_id}")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "branch_root_id": branch_root_id,
+            "pruned_count": deleted_count,
+            "pruned_thoughts": pruned,
+            "reason": reason
+        }
+    
+    def promote_branch(self, session_id: str, branch_root_id: str) -> Dict[str, Any]:
+        """
+        Promote a branch to be the mainline.
+        Updates the session to treat this branch as primary.
+        """
+        session = self.get_session(session_id)
+        if not session:
+            return {"success": False, "error": "Session not found"}
+        
+        history = self.get_session_history(session_id)
+        thought_map = {t.id: t for t in history}
+        
+        if branch_root_id not in thought_map:
+            return {"success": False, "error": f"Branch root {branch_root_id} not found"}
+        
+        # Get the branch and its path
+        branch = thought_map[branch_root_id]
+        
+        # Update session to point to this branch's latest
+        with self._write_lock:
+            with self._get_connection() as conn:
+                try:
+                    # Find the latest thought in this branch
+                    def get_latest_in_branch(thought_id: str) -> str:
+                        thought = thought_map.get(thought_id)
+                        if not thought or not thought.children_ids:
+                            return thought_id
+                        # Return the last child (most recent)
+                        return get_latest_in_branch(thought.thought.children_ids[-1]) if thought.children_ids else thought_id
+                    
+                    # Mark this thought as promoted
+                    branch.tags.append("promoted_to_mainline")
+                    self.update_thought(session_id, branch)
+                    
+                    _audit_log("BRANCH_PROMOTE", session_id, f"Promoted branch {branch_root_id}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to promote branch {branch_root_id}: {e}")
+                    return {"success": False, "error": str(e)}
+        
+        logger.info(f"[BRANCH] Promoted branch {branch_root_id} to mainline")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "promoted_branch_id": branch_root_id,
+            "new_current_thought": branch_root_id,
+            "promotion_message": f"Branch {branch_root_id} is now the mainline path"
+        }

@@ -8,8 +8,8 @@ from src.core.models.enums import ThinkingStrategy
 from src.core.models.domain import CCTSessionState, EnhancedThought
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
-from src.analysis.scoring_engine import ScoringEngine
-from src.core.services.identity import IdentityService
+from src.core.services.analysis.scoring import ScoringService
+from src.core.services.user.identity import UserIdentityService as IdentityService
 from src.core.validators import validate_session_id
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
@@ -20,11 +20,11 @@ class BaseCognitiveEngine(ABC):
     Enforces architectural consistency across primitive and hybrid modes.
     """
 
-    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService):
+    def __init__(self, memory_manager: MemoryManager, sequential_engine: SequentialEngine, identity_service: IdentityService, scoring_engine: ScoringService):
         self.memory = memory_manager
         self.sequential = sequential_engine
         self.identity = identity_service
-        self.scoring = ScoringEngine()
+        self.scoring = scoring_engine
 
     @property
     @abstractmethod
@@ -119,9 +119,11 @@ class BaseCognitiveEngine(ABC):
         session = self._get_session_or_raise(session_id)
         if not session.identity_layer:
             # Fallback to defaults if session somehow missing identity
+            logger.warning(f"[IDENTITY_RAIL] Session {session_id} missing identity_layer. Loading from IdentityService fallback.")
             identity = self.identity.load_identity()
         else:
             identity = session.identity_layer
+            logger.debug(f"[IDENTITY_RAIL] Using session identity_layer for {session_id}")
             
         prefix = self.identity.format_system_prefix(identity)
         return f"{prefix}\n\n{base_system_prompt}"

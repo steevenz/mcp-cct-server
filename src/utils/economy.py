@@ -5,7 +5,8 @@ from src.core.constants import (
     DEFAULT_SLIDING_WINDOW_SIZE,
     DEFAULT_SUMMARY_DEPTH_THRESHOLD,
 )
-from src.analysis.summarization import ContextCompressor, CompressionResult
+from src.core.services.analysis.summarization import ContextCompressor
+from src.core.models.analysis import CompressionResult
 
 logger = logging.getLogger(__name__)
 

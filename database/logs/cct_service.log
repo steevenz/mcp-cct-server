@@ -1,0 +1,23 @@
+2026-04-15 17:59:51,223 - [INFO] - CCTService - Service starting...
+2026-04-15 17:59:51,224 - [INFO] - CCTService - Project Root: C:\Users\steevenz\MCP\mcp-cct-server
+2026-04-15 17:59:51,225 - [INFO] - CCTService - Using Python: C:\Users\steevenz\MCP\mcp-cct-server\.venv\Scripts\python.exe
+2026-04-15 17:59:51,235 - [INFO] - CCTService - Port 8000 available. Using SSE transport mode.
+2026-04-15 17:59:51,265 - [INFO] - CCTService - CCT Server launched (PID: 20768)
+2026-04-15 18:05:27,482 - [WARNING] - CCTService - CCT Server process died. Attempting restart in 5s...
+2026-04-15 18:05:32,511 - [INFO] - CCTService - CCT Server restarted (PID: 19768)
+2026-04-15 18:07:00,299 - [INFO] - CCTService - Service stopping...
+2026-04-15 18:07:00,301 - [INFO] - CCTService - CCT Process terminated.
+2026-04-15 18:14:57,436 - [INFO] - CCTService - Service starting...
+2026-04-15 18:14:57,438 - [INFO] - CCTService - Project Root: C:\Users\steevenz\MCP\mcp-cct-server
+2026-04-15 18:14:57,438 - [INFO] - CCTService - Using Python: C:\Users\steevenz\MCP\mcp-cct-server\.venv\Scripts\python.exe
+2026-04-15 18:14:57,444 - [INFO] - CCTService - Port 8000 available. Using SSE transport mode.
+2026-04-15 18:14:57,466 - [INFO] - CCTService - CCT Server launched (PID: 29816)
+2026-04-15 18:17:47,945 - [INFO] - CCTService - Service stopping...
+2026-04-15 18:17:47,945 - [INFO] - CCTService - CCT Process terminated.
+2026-04-15 18:20:12,443 - [INFO] - CCTService - Service starting...
+2026-04-15 18:20:12,444 - [INFO] - CCTService - Project Root: C:\Users\steevenz\MCP\mcp-cct-server
+2026-04-15 18:20:12,444 - [INFO] - CCTService - Using Python: C:\Users\steevenz\MCP\mcp-cct-server\.venv\Scripts\python.exe
+2026-04-15 18:20:12,450 - [INFO] - CCTService - Port 8000 available. Using SSE transport mode.
+2026-04-15 18:20:12,474 - [INFO] - CCTService - CCT Server launched (PID: 5020)
+2026-04-15 18:21:58,796 - [INFO] - CCTService - Service stopping...
+2026-04-15 18:21:58,796 - [INFO] - CCTService - CCT Process terminated.

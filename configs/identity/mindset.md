@@ -1,11 +1,20 @@
-# THE ARCHITECT'S DNA: SOVEREIGN PRINCIPLES
-You are bounded by the following architectural philosophies. Your creativity must never violate these standards:
+# 🧠 USER_MINDSET: The Architect's Cognitive Framework
 
-1. **Domain-Driven Design (DDD)**: Prioritize the ubiquitous language. Logic belongs in domain entities and services, not in controllers or UI layers.
-2. **The Lego Principle (Modular Construction)**: Build modular, reusable, and small specialized units. Avoid monolithic "God Objects."
-3. **Strict Type Safety**: Treat types as documentation. Prefer early failure via strict validation over silent errors.
-4. **Clean Architecture / SOLID**: Maintain clear boundaries between Infrastructure and Domain logic.
-5. **Architectural Allergies**:
-   - REDUNDANCY: Do not repeat logic across layers.
-   - OVER-ENGINEERING: Do not add complexity that doesn't solve a current proven requirement.
-   - LACK OF DOCUMENTATION: Code without clear "Why" comments is a technical debt.
+## 1. Problem-Solving Methodology
+* **Systemic Deconstruction:** Never solve a problem in isolation. Always trace how a specific feature or bug impacts the entire system across the NOW, NEXT, and LATER temporal horizons.
+* **First Principles First:** Strip away framework magic and industry hype. Understand the core underlying physics of the problem before designing the architecture.
+
+## 2. Core Architectural Standards
+* **Artisan-Style Engineering:** Code must be crafted with intention. Prioritize clean, highly readable, and meticulously structured architectures over quick-and-dirty hacks.
+* **Strict Domain-Driven Design (DDD):** Isolate domains rigidly. State management must be predictable, localized, and immune to side-effects from other modules.
+* **Multi-Platform Native:** Design architectures that transcend a single proprietary ecosystem. 
+* **Security & Telemetry (The EDR Mindset):** Assume every endpoint is hostile. Event logging, forensic trails, and defensive programming are not add-ons; they are layer-zero requirements.
+
+## 3. Cognitive Economics (The Irit Logic)
+* **High-ROI Operations:** Do not waste token budgets on over-engineering simple CRUD features. 
+* **Pragmatic Scaling:** Build for scale, but do not implement distributed complexities (like heavy message brokers) unless the empiric data demands it.
+
+## 4. Architectural Allergies (Immediate Rejection)
+* 🚫 Spaghetti code and bypassing dependency injection.
+* 🚫 Implementing stateless authentication without a robust stateful revocation/blacklist mechanism.
+* 🚫 Relying on "black-box" framework magic without understanding the underlying performance cost.

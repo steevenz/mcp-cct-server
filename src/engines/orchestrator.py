@@ -6,17 +6,20 @@ from typing import Dict, Any, Optional, List
 
 from src.core.models.enums import ThinkingStrategy, CCTProfile, SessionStatus
 from src.core.models.domain import AntiPattern, EnhancedThought
-from src.core.hitl_enforcement import HITLEnforcer
+from src.core.services.orchestration.autonomous import AutonomousService
 from src.engines.memory.pattern_injector import PatternInjector, InjectionResult
+from src.engines.memory.thinking_patterns import PatternArchiver
 from src.modes.registry import CognitiveEngineRegistry
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.engines.fusion.router import AutomaticPipelineRouter
-from src.engines.skills_loader import SkillsLoader
-from src.analysis.summarization import compress_session_context
+from src.core.services.orchestration.routing import RoutingService as IntelligenceRouter
+from src.core.services.loader.skills import SkillsLoader
+from src.core.services.analysis.summarization import compress_session_context
 from src.utils.pricing import pricing_manager, ForexService
-from src.core.services.identity import IdentityService
+from src.core.services.user.identity import UserIdentityService as IdentityService
+from src.core.services.evaluation.clearance import ClearanceService as InternalClearanceService
+from src.core.services.analysis.scoring import ScoringService
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +31,97 @@ class CognitiveOrchestrator:
     """
 
     def __init__(
-        self, 
-        memory_manager: MemoryManager, 
-        sequential_engine: SequentialEngine, 
-        registry: CognitiveEngineRegistry,
-        fusion_engine: FusionOrchestrator,
-        router: AutomaticPipelineRouter,
-        identity: IdentityService
+        self,
+        memory_manager: MemoryManager,
+        sequential_engine: SequentialEngine,
+        scoring_engine: ScoringService,
+        cognitive_engine_registry: CognitiveEngineRegistry,
+        fusion_orchestrator: FusionOrchestrator,
+        complexity_service: Any,
+        guidance_service: Any,
+        autonomous_service: AutonomousService,
+        thought_service: Any,
+        review_service: Any,
+        internal_clearance: Any,
+        identity_service: Any,
+        digital_hippocampus: Any,
+        eval_first_service: Any,
+        task_decomposition_service: Any
     ):
         self.memory = memory_manager
         self.sequential = sequential_engine
-        self.registry = registry
-        self.fusion = fusion_engine
-        self.router = router
-        self.identity = identity
+        self.scoring = scoring_engine
+        self.registry = cognitive_engine_registry
+        self.fusion = fusion_orchestrator
+        self.complexity_service = complexity_service
+        self.guidance_service = guidance_service
+        self.autonomous = autonomous_service
+        self.thought_service = thought_service
+        self.review_service = review_service
+        self.internal_clearance = internal_clearance
+        self.identity = identity_service
+        self.digital_hippocampus = digital_hippocampus
+        self.eval_first_service = eval_first_service
+        self.task_decomposition_service = task_decomposition_service
+        self.router = IntelligenceRouter(scoring_engine=scoring_engine)
         self.skills_loader = SkillsLoader()
-        self.hitl_enforcer = HITLEnforcer(memory_manager)
-        # Identity service is already provisioned by bootstrap
-        logger.info("Cognitive Orchestrator (with Identity/Fusion/Router/HITL/Skills) initialized.")
+        self.pattern_archiver = PatternArchiver(memory_manager)
+        logger.info("Cognitive Orchestrator (with Identity/Fusion/Router/Autonomous/Skills/PatternArchiver/InternalClearance/EvalFirst/TaskDecomposition) initialized.")
+
+    async def think(self, session_id: str, payload: Dict[str, Any] = {}) -> Dict[str, Any]:
+        """
+        The autonomous 'Autonomous Think' entry point.
+        Determines the next strategy dynamically and executes it.
+        
+        This enables the 'Automatic Pipeline' where the AI decides its following
+        reasoning path based on real-time metrics and quality thresholds.
+        """
+        # 1. Fetch State
+        session = self.memory.get_session(session_id)
+        if not session:
+            return {"status": "error", "message": f"Session {session_id} not found."}
+            
+        history = self.memory.get_session_history(session_id)
+        
+        # 2. Consult the Intelligence Router to determine the next optimal strategy
+        strategy = self.router.next_strategy(session, history)
+        
+        # [AUTONOMOUS] If the router suggests finishing, wrap up
+        if self.router.should_finish(session, history):
+             return {
+                 "status": "success", 
+                 "session_id": session_id,
+                 "message": "Cognitive goal achieved. Process finishing.",
+                 "is_concluded": True
+             }
+
+        # 3. [ENRICHMENT] Auto-populate payload for Engine Schemas
+        # If payload is mostly empty (autonomous), we derive defaults from the session
+        if "strategy" not in payload:
+            payload["strategy"] = strategy.value
+        if "thought_number" not in payload:
+            payload["thought_number"] = session.current_thought_number + 1
+        if "estimated_total_thoughts" not in payload:
+            payload["estimated_total_thoughts"] = session.estimated_total_thoughts
+        if "thought_type" not in payload:
+            # Default to plan for start, eval for middle, conclusion for end
+            if session.current_thought_number == 0:
+                payload["thought_type"] = "plan"
+            elif session.current_thought_number >= session.estimated_total_thoughts - 1:
+                payload["thought_type"] = "conclusion"
+            else:
+                payload["thought_type"] = "analysis"
+        
+        # [INPUT MAPPING] Map custom_instruction to thought_content if missing
+        if "thought_content" not in payload and "custom_instruction" in payload:
+            payload["thought_content"] = payload["custom_instruction"]
+        elif "thought_content" not in payload:
+            # Fallback for truly autonomous steps with no prompt
+            payload["thought_content"] = f"Proceeding with {strategy.value} strategy based on mission objectives."
+
+        # 4. Execute the detected strategy
+        logger.info(f"[AUTONOMOUS] Determined next strategy: {strategy.value}")
+        return await self.execute_strategy(session_id, strategy, payload)
 
     async def execute_strategy(
         self, 
@@ -62,7 +138,7 @@ class CognitiveOrchestrator:
         logger.info(f"Orchestrating strategy '{strategy.value}' for session '{session_id}'")
 
         # [HITL CHECK] Block execution if awaiting human clearance
-        hitl_check = self.hitl_enforcer.check_execution_allowed(session_id)
+        hitl_check = self.autonomous.check_execution_allowed(session_id)
         if not hitl_check.get("allowed", True):
             logger.warning(f"[HITL] Execution blocked for session {session_id}: {hitl_check.get('error')}")
             return hitl_check
@@ -121,6 +197,13 @@ class CognitiveOrchestrator:
                 session.total_cost_idr = round(total_idr, 5)
                 self.memory.update_session(session)
 
+                # 4b. [LTP] Archive elite thoughts as Golden Patterns
+                for thought in history:
+                    if thought.metrics and thought.metrics.logical_coherence >= 0.9:
+                        archive_result = self.pattern_archiver.archive_thought(thought, session_id)
+                        if archive_result.archived:
+                            logger.info(f"[LTP] Golden pattern archived: {archive_result.pattern_id}")
+
                 # Attach usage block to result for tool output
                 live_rate = history[-1].metrics.currency_rate_idr if history else ForexService.DEFAULT_RATE
                 result["usage"] = {
@@ -161,7 +244,7 @@ class CognitiveOrchestrator:
                     "metrics": result.get("metrics"),
                     "convergence_reason": convergence.get("reason")
                 }
-                stop_result = self.hitl_enforcer.trigger_human_stop(session_id, executive_summary)
+                stop_result = self.autonomous.trigger_human_stop(session_id, executive_summary)
                 # Merge HITL instructions into the final result
                 result.update(stop_result)
             

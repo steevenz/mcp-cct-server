@@ -3,9 +3,9 @@ from src.engines.memory.manager import MemoryManager
 from src.engines.orchestrator import CognitiveOrchestrator
 from src.engines.sequential.engine import SequentialEngine
 from src.modes.registry import CognitiveEngineRegistry
-from src.analysis.scoring_engine import ScoringEngine
+from src.core.services.analysis.scoring import ScoringService
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.engines.fusion.router import AutomaticPipelineRouter
+from src.core.services.routing import IntelligenceRouter
 from src.core.models.domain import EnhancedThought, CCTSessionState, ThoughtMetrics
 from src.core.models.enums import ThoughtType, ThinkingStrategy, CCTProfile
 from src.core.models.contexts import SequentialContext
@@ -47,37 +47,74 @@ def sequential_engine(memory_manager):
     return SequentialEngine(memory_manager)
 
 @pytest.fixture
-def scoring_engine():
-    """Provides a ScoringEngine for analysis and metrics."""
-    return ScoringEngine()
+def scoring():
+    """Provides a ScoringService for analysis and metrics."""
+    return ScoringService()
 
 @pytest.fixture
-def fusion_orchestrator(memory_manager, sequential_engine, scoring_engine):
-    """Provides a FusionOrchestrator for multi-agent fusion."""
+def fusion_orchestrator_base(memory_manager, sequential_engine, scoring):
+    """Provides a properly initialized FusionOrchestrator with all required parameters."""
+    from src.core.services.autonomous import AutonomousService
+    from src.core.services.llm.client import ThoughtGenerationService
+    from src.core.services.guidance import GuidanceService
+    from src.core.services.identity import IdentityService
+    from src.core.config import load_settings
+    
+    settings = load_settings()
+    autonomous = AutonomousService(settings, memory_manager)
+    thought_service = ThoughtGenerationService(settings)
+    guidance = GuidanceService()
+    identity = IdentityService()
+    
     return FusionOrchestrator(
         memory=memory_manager,
-        scoring=scoring_engine,
-        sequential=sequential_engine
+        scoring=scoring,
+        sequential=sequential_engine,
+        orchestration=autonomous,
+        thought_service=thought_service,
+        guidance=guidance,
+        identity=identity
     )
 
 @pytest.fixture
-def automatic_router(scoring_engine):
-    """Provides an AutomaticPipelineRouter for dynamic pipeline selection."""
-    return AutomaticPipelineRouter(scoring_engine=scoring_engine)
+def automatic_router(scoring):
+    """Provides an IntelligenceRouter for dynamic pipeline selection."""
+    return IntelligenceRouter(scoring=scoring)
 
 @pytest.fixture
-def orchestrator(memory_manager, sequential_engine, fusion_orchestrator, automatic_router):
-    """Provides a CognitiveOrchestrator with all components injected."""
-    registry = CognitiveEngineRegistry(
+def full_registry(memory_manager, sequential_engine, fusion_orchestrator_base, scoring):
+    """Provides a CognitiveEngineRegistry with all required services."""
+    from src.core.services.autonomous import AutonomousService
+    from src.core.services.llm.client import ThoughtGenerationService
+    from src.core.services.guidance import GuidanceService
+    from src.core.services.identity import IdentityService
+    from src.core.config import load_settings
+    
+    settings = load_settings()
+    autonomous = AutonomousService(settings, memory_manager)
+    thought_service = ThoughtGenerationService(settings)
+    guidance = GuidanceService()
+    identity = IdentityService()
+    
+    return CognitiveEngineRegistry(
         memory_manager=memory_manager,
         sequential_engine=sequential_engine,
-        fusion_orchestrator=fusion_orchestrator
+        fusion_orchestrator=fusion_orchestrator_base,
+        autonomous=autonomous,
+        thought_service=thought_service,
+        guidance=guidance,
+        identity=identity,
+        scoring=scoring
     )
+
+@pytest.fixture
+def orchestrator(memory_manager, sequential_engine, fusion_orchestrator_base, automatic_router, full_registry):
+    """Provides a CognitiveOrchestrator with all components injected."""
     orchestrator = CognitiveOrchestrator(
         memory_manager=memory_manager,
         sequential_engine=sequential_engine,
-        registry=registry,
-        fusion_engine=fusion_orchestrator,
+        registry=full_registry,
+        fusion_engine=fusion_orchestrator_base,
         router=automatic_router
     )
     yield orchestrator
@@ -111,6 +148,40 @@ def sample_thought(sample_session):
     )
 
 @pytest.fixture
-def temp_docs_root(tmp_path):
-    """Provides a temporary directory for file-based operations."""
-    return str(tmp_path / "test_docs")
+def temp_docs_root():
+    """Provides a temporary directory for file-based operations using designated temp folder."""
+    # Use designated temp folder
+    temp_base = Path("tests/verifications/temp")
+    temp_base.mkdir(parents=True, exist_ok=True)
+    temp_dir = temp_base / f"test_docs_{os.getpid()}"
+    temp_dir.mkdir(exist_ok=True)
+    yield str(temp_dir)
+    # Cleanup
+    import shutil
+    if temp_dir.exists():
+        shutil.rmtree(temp_dir)
+
+@pytest.fixture
+def fusion_orchestrator(memory_manager, sequential_engine, scoring):
+    """Provides a properly initialized FusionOrchestrator with all required parameters."""
+    from src.core.services.autonomous import AutonomousService
+    from src.core.services.llm.client import ThoughtGenerationService
+    from src.core.services.guidance import GuidanceService
+    from src.core.services.identity import IdentityService
+    from src.core.config import load_settings
+    
+    settings = load_settings()
+    autonomous = AutonomousService(settings, memory_manager)
+    thought_service = ThoughtGenerationService(settings)
+    guidance = GuidanceService()
+    identity = IdentityService()
+    
+    return FusionOrchestrator(
+        memory=memory_manager,
+        scoring=scoring,
+        sequential=sequential_engine,
+        orchestration=autonomous,
+        thought_service=thought_service,
+        guidance=guidance,
+        identity=identity
+    )

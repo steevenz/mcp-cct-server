@@ -1,0 +1,53 @@
+import pytest
+from src.modes.hybrids.critics.actor.orchestrator import ActorCriticEngine
+from src.core.models.enums import ThinkingStrategy, CCTProfile
+
+def test_actor_critic_trigger(memory_manager, sequential_engine):
+    """Test standard hybrid payload injects context and prompts into the session flow."""
+    import uuid
+    session = memory_manager.create_session("Refactor to DDD", CCTProfile.BALANCED, 5)
+    
+    # 1. Create the parent (target) thought utilizing direct storage
+    from src.core.models.domain import EnhancedThought
+    from src.core.models.enums import ThoughtType, ThinkingStrategy
+    from src.core.models.contexts import SequentialContext
+    
+    target_id = f"tt_target_{uuid.uuid4().hex[:8]}"
+    target = EnhancedThought(
+        id=target_id,
+        content="We should use a layered DDD approach.",
+        thought_type=ThoughtType.ANALYSIS,
+        strategy=ThinkingStrategy.SYSTEMATIC,
+        sequential_context=SequentialContext()
+    )
+    memory_manager.save_thought(session.session_id, target)
+    
+    # 2. Trigger the Actor-Critic proxy
+    engine = ActorCriticEngine(memory_manager, sequential_engine)
+    
+    payload = {
+        "target_thought_id": target.id,
+        "critic_persona": "DevOps Architect"
+    }
+    
+    result = engine.execute(session.session_id, payload)
+    
+    # Assert successful orchestration and internal prompt generation
+    assert result["status"] == "success"
+    assert result["target_thought_id"] == target.id
+    
+    # Assert the generated prompt was safely persisted
+    prompt_thought = memory_manager.get_thought(result["critic_phase"]["generated_id"])
+    assert prompt_thought is not None
+    assert prompt_thought.strategy == ThinkingStrategy.CRITICAL
+    assert prompt_thought.thought_type == ThoughtType.EVALUATION
+    assert "DevOps Architect" in prompt_thought.content
+
+def test_actor_critic_missing_target(memory_manager, sequential_engine):
+    """Test that missing target thought raises ValueError."""
+    session = memory_manager.create_session("Test", CCTProfile.BALANCED, 5)
+    
+    engine = ActorCriticEngine(memory_manager, sequential_engine)
+    
+    with pytest.raises(ValueError, match="Thought 'not_real' not found"):
+        engine.execute(session.session_id, {"target_thought_id": "not_real"})

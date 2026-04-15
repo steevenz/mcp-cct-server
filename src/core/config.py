@@ -18,6 +18,7 @@ class Settings:
     db_path: str
     pricing_path: str
     default_model: str
+    identity_dir: str
     dashboard_api_key: str
     mcp_secret: str | None
     # User operational preferences
@@ -37,6 +38,11 @@ class Settings:
     anthropic_api_key: str | None
     gemini_api_key: str | None
     ollama_base_url: str | None
+    # External Critic configuration (Cross-Model Audit)
+    critic_llm_api_url: str | None
+    critic_model: str | None
+    critic_api_key: str | None
+    critic_provider: str | None  # 'openai', 'anthropic', 'ollama', or None for custom endpoint
 
 
 def _parse_int(value: str, *, min_value: int, max_value: int, field_name: str) -> int:
@@ -79,7 +85,7 @@ def load_settings() -> Settings:
     if not host:
         raise ValueError("Invalid host")
 
-    port_raw = os.getenv("CCT_PORT", "8000").strip()
+    port_raw = os.getenv("CCT_PORT", "8001").strip()
     port = _parse_int(port_raw, min_value=1, max_value=65535, field_name="port")
 
     max_sessions_raw = os.getenv("CCT_MAX_SESSIONS", "128").strip()
@@ -90,11 +96,15 @@ def load_settings() -> Settings:
         raise ValueError(f"Invalid log level: {log_level}")
 
     # Optional paths and model with defaults from constants
-    from src.core.constants import DEFAULT_DB_PATH, DEFAULT_PRICING_PATH, DEFAULT_MODEL
+    from src.core.constants import DEFAULT_DB_PATH, DEFAULT_PRICING_PATH, DEFAULT_MODEL, DEFAULT_IDENTITY_DIR
     
     db_path = os.getenv("CCT_DB_PATH", DEFAULT_DB_PATH).strip()
     if not db_path:
         raise ValueError("Invalid database path")
+    
+    identity_dir = os.getenv("CCT_IDENTITY_PATH", DEFAULT_IDENTITY_DIR).strip()
+    if not identity_dir:
+        raise ValueError("Invalid identity path")
     
     pricing_path = os.getenv("CCT_PRICING_PATH", DEFAULT_PRICING_PATH).strip()
     if not pricing_path:
@@ -163,6 +173,7 @@ def load_settings() -> Settings:
         db_path=db_path,
         pricing_path=pricing_path,
         default_model=default_model,
+        identity_dir=identity_dir,
         max_thoughts=max_thoughts,
         max_content_length=max_content_length,
         max_context_tokens=max_context_tokens,
@@ -179,4 +190,9 @@ def load_settings() -> Settings:
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip() or None,
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or None,
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip() or None,
+        # External Critic configuration
+        critic_llm_api_url=os.getenv("CCT_CRITIC_API_URL", "").strip() or None,
+        critic_model=os.getenv("CCT_CRITIC_MODEL", "").strip() or None,
+        critic_api_key=os.getenv("CCT_CRITIC_API_KEY", "").strip() or None,
+        critic_provider=os.getenv("CCT_CRITIC_PROVIDER", "").strip().lower() or None,
     )

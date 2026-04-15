@@ -1,0 +1,217 @@
+import logging
+from typing import Dict, Any
+
+from pydantic import ValidationError
+
+from src.core.models.enums import ThinkingStrategy, ThoughtType
+from src.core.models.domain import EnhancedThought
+
+# Base contract
+from src.modes.base import BaseCognitiveEngine
+
+# Local schema
+from .schemas import ActorCriticDialogInput
+
+# New Services
+from typing import Any
+from src.core.services.orchestration.autonomous import AutonomousService
+from src.core.services.llm.client import ClientService as ThoughtGenerationService
+from src.core.services.llm.critic import CriticService as AdversarialReviewService
+from src.core.services.guidance.guidance import GuidanceService
+from src.core.services.user.identity import UserIdentityService as IdentityService
+from src.core.services.analysis.scoring import ScoringService
+
+logger = logging.getLogger(__name__)
+
+class ActorCriticEngine(BaseCognitiveEngine):
+    """
+    Automated Actor-Critic stress-testing loop.
+    Triggers a debate between the core architect and a specialized critic lens.
+    
+    Supports external cross-model audit (Gold Standard) for true adversarial review,
+    eliminating the 'echo chamber' effect of same-model critique.
+    """
+    
+    def __init__(
+        self,
+        memory: MemoryManager,
+        sequential: SequentialEngine,
+        autonomous: AutonomousService,
+        thought_service: ThoughtGenerationService,
+        guidance: GuidanceService,
+        identity: IdentityService,
+        scoring: ScoringService,
+        review_service: AdversarialReviewService = None
+    ):
+        super().__init__(memory, sequential, identity, scoring)
+        self.autonomous = autonomous
+        self.thought_service = thought_service
+        self.guidance = guidance
+        self.review_service = review_service
+
+    @property
+    def strategy_type(self) -> ThinkingStrategy:
+        """Binds this engine to the ACTOR_CRITIC_LOOP strategy."""
+        return ThinkingStrategy.ACTOR_CRITIC_LOOP
+
+    async def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Executes the two-phase Actor-Critic refinement process.
+        Converts the raw dictionary payload into a validated Pydantic schema first.
+        """
+        # 1. Validate payload using local schema
+        try:
+            validated_input = ActorCriticDialogInput(**input_payload)
+        except ValidationError as e:
+            raise ValueError(f"Invalid payload for Actor-Critic Engine: {e.errors()}")
+
+        # 2. Fetch Session and Target Thought using base class helpers
+        session = self._get_session_or_raise(session_id)
+        target_thought = self._get_thought_or_raise(validated_input.target_thought_id)
+
+        logger.info(f"Initiating Actor-Critic loop for target thought: {target_thought.id}")
+
+        mode = self.orchestration.get_execution_mode(session.complexity)
+
+        critic_source = "internal"
+        
+        if mode == "autonomous":
+            logger.info(f"[ACTOR-CRITIC] Executing autonomous loop for session {session_id}")
+            
+            # PHASE 1: THE CRITIC (with External Cross-Model Support)
+            critic_simulated_step = session.current_thought_number + 1
+            critic_seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=critic_simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=True,
+                branch_from_id=target_thought.id,
+                branch_id="critic_branch"
+            )
+            
+            # Use AdversarialReviewService if available for true cross-model audit
+            if self.review_service:
+                logger.info(f"[ACTOR-CRITIC] Using external review service for cross-model audit")
+                critic_sys_prompt = f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
+                review_outcome = await self.review_service.review(
+                    target_content=target_thought.content,
+                    persona=self._persona,
+                    system_prompt=None,
+                    primary_thought_service=self.thought_service
+                )
+                critic_content = review_outcome.content
+                critic_source = review_outcome.source
+                logger.info(f"[ACTOR-CRITIC] Critic source: {critic_source} ({review_outcome.latency_ms:.0f}ms)")
+            else:
+                # Fallback to primary LLM (single-model actor-critic)
+                critic_prompt = (
+                    f"AUDIT TARGET: {target_thought.content}\n"
+                    f"PERSONA: {validated_input.critic_persona}\n"
+                    f"INSTRUCTION: Identify flaws, vulnerabilities, or bottlenecks."
+                )
+                critic_sys_prompt = f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
+                critic_content = await self.thought_service.generate_thought(
+                    prompt=critic_prompt,
+                    system_prompt=self._get_identity_decorated_system_prompt(session_id, critic_sys_prompt)
+                )
+                critic_source = "primary_llm"
+            
+            critic_thought = EnhancedThought(
+                id=self._generate_thought_id("critic"),
+                content=critic_content,
+                thought_type=ThoughtType.EVALUATION,
+                strategy=ThinkingStrategy.CRITICAL,
+                parent_id=target_thought.id,
+                contradicts=[target_thought.id],
+                sequential_context=critic_seq_context,
+                tags=["actor_critic_loop", "critic_phase", "autonomous", f"source_{critic_source}"]
+            )
+            self.memory.save_thought(session_id, critic_thought)
+            session.current_thought_number += 1
+            
+            # PHASE 2: THE SYNTHESIS
+            synth_simulated_step = session.current_thought_number + 1
+            synthesis_seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=synth_simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=False,
+                is_revision=True,
+                revises_id=target_thought.id
+            )
+            
+            synth_prompt = (
+                f"ORIGINAL: {target_thought.content}\n"
+                f"CRITIQUE: {critic_content}\n"
+                f"INSTRUCTION: Resolve the conflicts and formulate a production-ready solution."
+            )
+            synth_sys_prompt = "You are a Systems Architect. Synthesize the proposal with its criticisms."
+            synthesis_content = await self.thought_service.generate_thought(
+                prompt=synth_prompt,
+                system_prompt=self._get_identity_decorated_system_prompt(session_id, synth_sys_prompt)
+            )
+            
+            synthesis_thought = EnhancedThought(
+                id=self._generate_thought_id("synth"),
+                content=synthesis_content,
+                thought_type=ThoughtType.SYNTHESIS,
+                strategy=ThinkingStrategy.DIALECTICAL,
+                parent_id=critic_thought.id,
+                builds_on=[target_thought.id, critic_thought.id],
+                sequential_context=synthesis_seq_context,
+                tags=["actor_critic_loop", "synthesis_phase", "autonomous"]
+            )
+            self.memory.save_thought(session_id, synthesis_thought)
+            session.current_thought_number += 1
+            
+        else:
+            logger.info(f"[ACTOR-CRITIC] Providing guided loop for session {session_id}")
+            
+            # Create ONE guidance thought instead of multi-step automation
+            simulated_step = session.current_thought_number + 1
+            seq_context = self.sequential.process_sequence_step(
+                session_id=session_id,
+                llm_thought_number=simulated_step,
+                llm_estimated_total=session.estimated_total_thoughts,
+                next_thought_needed=True
+            )
+            
+            guidance_msg = self.guidance.format_guidance_message(ThinkingStrategy.ACTOR_CRITIC_LOOP)
+            guidance_msg += f"\nSTAKEHOLDER: {validated_input.critic_persona}"
+            
+            synthesis_thought = EnhancedThought(
+                id=self._generate_thought_id("guidance"),
+                content=guidance_msg,
+                thought_type=ThoughtType.PROTOCOL,
+                strategy=ThinkingStrategy.ACTOR_CRITIC_LOOP,
+                parent_id=target_thought.id,
+                sequential_context=seq_context,
+                tags=["actor_critic_loop", "guidance", "guided"]
+            )
+            self.memory.save_thought(session_id, synthesis_thought)
+            session.current_thought_number += 1
+
+        # Update the original thought's children to maintain tree integrity
+        target_thought.children_ids.append(synthesis_thought.id)
+        self.memory.update_thought(session_id, target_thought)
+        self.memory.update_session(session)
+
+        logger.info(f"Actor-Critic loop handled. Final Thought ID: {synthesis_thought.id} (Mode: {mode})")
+
+        return {
+            "status": "success",
+            "orchestration_mode": self.strategy_type.value,
+            "target_thought_id": target_thought.id,
+            "critic_phase": {
+                "generated_id": critic_thought.id,
+                "strategy": critic_thought.strategy.value,
+                "source": critic_source
+            },
+            "synthesis_phase": {
+                "generated_id": synthesis_thought.id,
+                "strategy": synthesis_thought.strategy.value,
+                "is_revision": synthesis_seq_context.is_revision
+            },
+            "current_step": synthesis_seq_context.thought_number,
+            "cross_model_audit": critic_source in ["external", "external_cached"] if mode == "autonomous" else False
+        }

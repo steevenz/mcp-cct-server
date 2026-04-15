@@ -1,5 +1,6 @@
 # MCP Framework & Core Utilities
 fastmcp>=3.2.3
+sse-starlette>=1.6.0
 pydantic>=2.12.5
 uvicorn>=0.41.0
 fastapi>=0.135.1
