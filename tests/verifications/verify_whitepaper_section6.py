@@ -328,12 +328,13 @@ class TestDDDCompliance:
     
     def test_scoring_in_correct_layer(self):
         """Verify ScorsSrvicervice is in analysis layer (domain service)"""
-        from src.core.n_codanalysis.scoring import ScoringService
+        from src.core.services.analysis.scoring import ScoringService
         assert ScoringService is not None
     
     def test_bias_in_correct_layer(self):
         """Verify bias detection is in analysis layer"""
-        assert callable(bias.detect_bias_flags)
+        from src.core.services.analysis.bias import detect_bias_flags
+        assert callable(detect_bias_flags)
     
     def test_summarization_in_correct_layer(self):
         """Verify summarization is in analysis layer"""
@@ -354,7 +355,7 @@ class TestPythonBestPractices:
     
     def test_type_hints_present(self):
         """Verify functions have type hints"""
-        import inspectservic
+        import inspect
         from src.core.services.analysis.scoring import ScoringService
         
         sig = inspect.signature(ScoringService.analyze_thought)

@@ -89,6 +89,7 @@ class CCTProfile(str, Enum):
     CRITICAL_FIRST = "critical_first"
     DEEP_RECURSIVE = "deep_recursive"
     HUMAN_IN_THE_LOOP = "human_in_the_loop"  # Hard STOP mode for mission-critical ops
+    MIMIC_USER = "mimic_user"
 
 class SessionStatus(str, Enum):
     """Session lifecycle states including HITL clearance checkpoint."""

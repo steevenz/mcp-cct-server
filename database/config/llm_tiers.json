@@ -1,0 +1,55 @@
+{
+  "prd_id": "20260509-offline-first-symbiotic",
+  "version": "1.0.0",
+  "description": "3-tier LLM configuration: offline embedded Gemma → MCP Sampling (client LLM). No cloud API keys needed on server.",
+
+  "tier1_offline_embedded": {
+    "enabled": true,
+    "model": "gemma-2b",
+    "model_file": "gemma-2-2b-it-Q4_K_M.gguf",
+    "download_url": "https://huggingface.co/bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf",
+    "ram_gb": 1.2,
+    "context_length": 2048,
+    "threads": 4,
+    "gpu_layers": 0,
+    "tasks": ["extract", "classify", "score", "tag", "summarize"],
+    "min_confidence": 0.4
+  },
+
+  "tier2_offline_advanced": {
+    "enabled": true,
+    "model": "gemma-9b",
+    "model_file": "gemma-2-9b-it-Q4_K_M.gguf",
+    "download_url": "https://huggingface.co/bartowski/gemma-2-9b-it-GGUF/resolve/main/gemma-2-9b-it-Q4_K_M.gguf",
+    "ram_gb": 5.5,
+    "context_length": 4096,
+    "threads": 8,
+    "gpu_layers": 0,
+    "tasks": ["reason", "cluster", "trend", "mindset"],
+    "min_confidence": 0.6
+  },
+
+  "tier3_client_sampling": {
+    "enabled": true,
+    "protocol": "sampling/createMessage",
+    "description": "Uses the requesting LLM (Claude/GPT/Gemini from IDE) via MCP Sampling. No API key needed.",
+    "model_hints": [
+      {"name": "claude"},
+      {"name": "gpt"},
+      {"name": "gemini"}
+    ],
+    "intelligence_priority": 0.9,
+    "speed_priority": 0.3,
+    "cost_priority": 0.5,
+    "tasks": ["creative", "complex", "actor_critic", "council", "lateral", "temporal", "deep_reason"],
+    "fallback_tier": 2
+  },
+
+  "routing": {
+    "escalate_on_low_confidence": true,
+    "tier1_min_confidence": 0.4,
+    "tier2_min_confidence": 0.6,
+    "log_routing_decisions": true,
+    "cache_offline_analysis": true
+  }
+}

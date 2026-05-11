@@ -84,8 +84,10 @@ def register_session_tools(mcp: FastMCP, orchestrator: CognitiveOrchestrator, se
             Suggests a heuristic cognitive pipeline based on the problem statement.
             Useful for clients that want to preview the recommended strategy sequence.
             """
+            policy = PipelineSelector()
+            complexity = policy.complexity_service.detect_complexity(problem_statement).value
             category = PipelineSelector.detect_category(problem_statement)
-            pipeline = PipelineSelector.select_pipeline(problem_statement)
+            pipeline = policy.select_pipeline(problem_statement, complexity)
             return {
                 "category": category,
                 "pipeline": [s.value for s in pipeline],

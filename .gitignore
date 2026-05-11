@@ -86,6 +86,10 @@ docs/scratch/
 database/metadata/forex_cache.json
 database/datasets/
 
+# AI Models & Weights
+models/
+*.gguf
+
 # OS Specific
 .DS_Store
 Thumbs.db

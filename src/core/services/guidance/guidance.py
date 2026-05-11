@@ -37,7 +37,7 @@ class GuidanceService:
         ThinkingStrategy.MULTI_AGENT_FUSION: {
             "name": "Multi-Agent Fusion",
             "instruction": (
-                "Simulate a collaborative war room with specialized experts. "
+                "Run a collaborative war room with specialized experts. "
                 "Each expert provides a divergent perspective, which is then synthesized into a master conclusion."
             ),
             "suggested_personas": ["Systems Architect", "Security Engineer", "Product Manager", "UX Specialist"],

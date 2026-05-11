@@ -119,7 +119,11 @@ class RouterService:
             "cost_savings": 0.0,  # vs always using DEEP depth
         }
     
-    def select_model(self, task_context: CognitiveTaskContext) -> ModelSelection:
+    def select_model(
+        self,
+        task_context: CognitiveTaskContext,
+        provider_override: Optional[str] = None,
+    ) -> ModelSelection:
         """
         Select appropriate model for a cognitive task.
         
@@ -141,7 +145,7 @@ class RouterService:
         final_depth = self._apply_cost_constraints(adjusted_depth, task_context)
         
         # Step 4: Select provider
-        provider = self._select_provider(final_depth)
+        provider = self._select_provider(final_depth, provider_override=provider_override)
         
         # Step 5: Build selection
         model = self.MODELS[provider][final_depth]
@@ -155,7 +159,7 @@ class RouterService:
         self._selection_stats["depth_distribution"][final_depth.value] += 1
         
         # Calculate cost savings vs using DEEP depth
-        deep_cost = (self.TIER_COSTS[provider][ReasoningDepth.DEEP] * task_context.token_estimate) / 1000
+        deep_cost = (self.DEPTH_COSTS[provider][ReasoningDepth.DEEP] * task_context.token_estimate) / 1000
         self._selection_stats["cost_savings"] += (deep_cost - estimated_cost)
         
         rationale = self._generate_rationale(task_context, final_depth, provider)
@@ -230,20 +234,46 @@ class RouterService:
         # If all depths exceed budget, return cheapest
         return ReasoningDepth.FAST
     
-    def _select_provider(self, depth: ReasoningDepth) -> str:
+    def _is_provider_configured(self, provider: str) -> bool:
+        if provider == "gemini":
+            return bool(self.settings.gemini_api_key)
+        if provider == "openai":
+            return bool(self.settings.openai_api_key)
+        if provider == "anthropic":
+            return bool(self.settings.anthropic_api_key)
+        if provider == "openrouter":
+            return bool(self.settings.openrouter_api_key)
+        if provider == "deepseek":
+            return bool(self.settings.deepseek_api_key)
+        if provider == "ninerouter":
+            return bool(self.settings.ninerouter_api_key)
+        if provider == "ollama":
+            return bool(self.settings.ollama_base_url) and self.settings.llm_provider == "ollama"
+        return False
+
+    def _select_provider(self, depth: ReasoningDepth, provider_override: Optional[str] = None) -> str:
         """Select best available provider for the depth."""
-        # Priority: Gemini (free) > Ollama (local) > Anthropic > OpenAI
-        if self.settings.gemini_api_key:
-            return "gemini"
-        elif self.settings.ollama_base_url:
-            return "ollama"
-        elif self.settings.anthropic_api_key:
-            return "anthropic"
-        elif self.settings.openai_api_key:
-            return "openai"
-        else:
-            # Default fallback
-            return "gemini"
+        del depth  # depth-aware routing can be introduced later without changing callsites.
+
+        if provider_override:
+            normalized = provider_override.strip().lower()
+            if normalized not in self.MODELS:
+                raise ValueError(f"Unsupported provider override: {provider_override}")
+            if not self._is_provider_configured(normalized):
+                raise ValueError(f"Provider override '{normalized}' is not configured")
+            return normalized
+
+        preferred = (self.settings.llm_provider or "").strip().lower()
+        if preferred and preferred in self.MODELS and self._is_provider_configured(preferred):
+            return preferred
+
+        # Cost-aware fallback priority if no preferred provider is configured.
+        # Prioritize LOCAL (Ollama/Gemma) -> FREE/CHEAP providers
+        for candidate in ("ollama", "openrouter", "gemini", "ninerouter", "deepseek", "anthropic", "openai"):
+            if self._is_provider_configured(candidate):
+                return candidate
+
+        raise ValueError("No LLM provider is configured")
     
     def _generate_rationale(self, task: CognitiveTaskContext, depth: ReasoningDepth, provider: str) -> str:
         """Generate human-readable selection rationale."""

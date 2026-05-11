@@ -106,6 +106,10 @@ class BaseCognitiveEngine(ABC):
         history: list[EnhancedThought],
         model_id: str,
     ) -> None:
+        session = self.memory.get_session(session_id)
+        if session and session.identity_layer:
+            thought.reasoning_trace_id = session.identity_layer.get("reasoning_trace_id")
+            
         thought.metrics = self.scoring.analyze_thought(thought, history, model_id=model_id)
         thought.summary = self.scoring.generate_summary(thought.content)
         self.memory.save_thought(session_id, thought)

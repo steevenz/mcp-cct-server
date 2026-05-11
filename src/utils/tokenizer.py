@@ -56,7 +56,7 @@ class HeuristicEncoder:
         self.model_id = model_id
 
     def encode(self, text: str) -> List[int]:
-        """Simple encoding mock returning dummy IDs based on regex matches."""
+        """Heuristic encoding returning zero IDs based on regex token matches."""
         # We don't need real IDs, just the count for most purposes
         # But we return a list to match tiktoken's interface
         matches = _HEURISTIC_BPE_PATTERN.findall(text)

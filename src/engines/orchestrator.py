@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 import os
@@ -9,11 +10,13 @@ from src.core.models.domain import AntiPattern, EnhancedThought
 from src.core.services.orchestration.autonomous import AutonomousService
 from src.engines.memory.pattern_injector import PatternInjector, InjectionResult
 from src.engines.memory.thinking_patterns import PatternArchiver
+from src.engines.memory.consolidation import ConsolidationEngine
 from src.modes.registry import CognitiveEngineRegistry
 from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.core.services.orchestration.routing import RoutingService as IntelligenceRouter
+from src.core.services.orchestration.adaptive_router import AdaptiveRouter
+from src.core.services.analysis.domain_classifier import classify_problem_domain
 from src.core.services.loader.skills import SkillsLoader
 from src.core.services.analysis.summarization import compress_session_context
 from src.utils.pricing import pricing_manager, ForexService
@@ -26,7 +29,7 @@ logger = logging.getLogger(__name__)
 class CognitiveOrchestrator:
     """
     The Master Controller (Application Service) for the CCT system.
-    Orchestrates the lifecycle of a cognitive task by coordinating the 
+    Orchestrates the lifecycle of a cognitive task by coordinating the
     Registry, Memory, Sequential, and Fusion engines.
     """
 
@@ -63,37 +66,46 @@ class CognitiveOrchestrator:
         self.digital_hippocampus = digital_hippocampus
         self.eval_first_service = eval_first_service
         self.task_decomposition_service = task_decomposition_service
-        self.router = IntelligenceRouter(scoring_engine=scoring_engine)
+        self.router = AdaptiveRouter(scoring_engine=scoring_engine)
         self.skills_loader = SkillsLoader()
         self.pattern_archiver = PatternArchiver(memory_manager)
-        logger.info("Cognitive Orchestrator (with Identity/Fusion/Router/Autonomous/Skills/PatternArchiver/InternalClearance/EvalFirst/TaskDecomposition) initialized.")
+        self.consolidation = ConsolidationEngine(memory_manager)
+        self._consolidation_counter = 0
+        logger.info("Cognitive Orchestrator (with Identity/Fusion/AdaptiveRouter/Autonomous/Skills/PatternArchiver/Consolidation/InternalClearance/EvalFirst/TaskDecomposition) initialized.")
 
     async def think(self, session_id: str, payload: Dict[str, Any] = {}) -> Dict[str, Any]:
         """
         The autonomous 'Autonomous Think' entry point.
         Determines the next strategy dynamically and executes it.
-        
-        This enables the 'Automatic Pipeline' where the AI decides its following
-        reasoning path based on real-time metrics and quality thresholds.
         """
-        # 1. Fetch State
         session = self.memory.get_session(session_id)
         if not session:
             return {"status": "error", "message": f"Session {session_id} not found."}
-            
+
         history = self.memory.get_session_history(session_id)
-        
-        # 2. Consult the Intelligence Router to determine the next optimal strategy
+
+        # 2. Consult the Adaptive Router (wraps IntelligenceRouter with learning)
         strategy = self.router.next_strategy(session, history)
-        
-        # [AUTONOMOUS] If the router suggests finishing, wrap up
+
+        # [AUTONOMOUS] If the router suggests finishing, wrap up and record outcome
         if self.router.should_finish(session, history):
-             return {
-                 "status": "success", 
-                 "session_id": session_id,
-                 "message": "Cognitive goal achieved. Process finishing.",
-                 "is_concluded": True
-             }
+            # Record successful outcome for adaptive learning
+            domain = classify_problem_domain(session.problem_statement)
+            if history:
+                last_strat = history[-1].strategy.value if history[-1].strategy else "unknown"
+                self.router.record_outcome(domain, last_strat, success=True)
+            # Trigger consolidation every 5 concluded sessions
+            self._consolidation_counter += 1
+            if self._consolidation_counter >= 5:
+                llm_id = getattr(session, "llm_instance_id", None)
+                asyncio.ensure_future(self._run_consolidation(llm_id))
+                self._consolidation_counter = 0
+            return {
+                "status": "success",
+                "session_id": session_id,
+                "message": "Cognitive goal achieved. Process finishing.",
+                "is_concluded": True
+            }
 
         # 3. [ENRICHMENT] Auto-populate payload for Engine Schemas
         # If payload is mostly empty (autonomous), we derive defaults from the session
@@ -111,7 +123,7 @@ class CognitiveOrchestrator:
                 payload["thought_type"] = "conclusion"
             else:
                 payload["thought_type"] = "analysis"
-        
+
         # [INPUT MAPPING] Map custom_instruction to thought_content if missing
         if "thought_content" not in payload and "custom_instruction" in payload:
             payload["thought_content"] = payload["custom_instruction"]
@@ -124,14 +136,14 @@ class CognitiveOrchestrator:
         return await self.execute_strategy(session_id, strategy, payload)
 
     async def execute_strategy(
-        self, 
-        session_id: str, 
-        strategy: ThinkingStrategy, 
+        self,
+        session_id: str,
+        strategy: ThinkingStrategy,
         payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Routes the task to the appropriate engine and manages session context.
-        
+
         [HITL ENFORCEMENT] For HUMAN_IN_THE_LOOP profiles, execution is blocked
         if awaiting human clearance (hard STOP at Phase 7).
         """
@@ -175,37 +187,39 @@ class CognitiveOrchestrator:
                 payload["model_id"] = session.model_id
 
             result = await engine.execute(session_id, payload)
-            
+
+            # Refresh once after strategy execution and reuse for all downstream steps.
+            updated_history = self.memory.get_session_history(session_id)
+            session = self.memory.get_session(session_id)
+
             # 3. [AUTOMATIC PIPELINE] Adaptive Feedback Loop
-            self.check_and_pivot(session_id)
+            self.check_and_pivot(session_id, history=updated_history)
 
             # 4. [TRANSPARENCY LAYER] Aggregate usage and cost summary
             if session:
-                # Use high-precision tokenizer for consolidated totals
-                from src.utils.tokenizer import count_tokens
-                
-                # Recalculate session totals from history to ensure absolute accuracy
-                history = self.memory.get_session_history(session_id)
-                total_in = sum(t.metrics.input_tokens for t in history)
-                total_out = sum(t.metrics.output_tokens for t in history)
-                total_usd = sum(t.metrics.input_cost_usd + t.metrics.output_cost_usd for t in history)
-                total_idr = sum(t.metrics.input_cost_idr + t.metrics.output_cost_idr for t in history)
-                
+                # Recalculate session totals from history to ensure absolute accuracy.
+                total_in = sum(t.metrics.input_tokens for t in updated_history)
+                total_out = sum(t.metrics.output_tokens for t in updated_history)
+                total_usd = sum(t.metrics.input_cost_usd + t.metrics.output_cost_usd for t in updated_history)
+                total_idr = sum(t.metrics.input_cost_idr + t.metrics.output_cost_idr for t in updated_history)
+
                 session.total_prompt_tokens = total_in
                 session.total_completion_tokens = total_out
                 session.total_cost_usd = round(total_usd, 10)
                 session.total_cost_idr = round(total_idr, 5)
                 self.memory.update_session(session)
 
-                # 4b. [LTP] Archive elite thoughts as Golden Patterns
-                for thought in history:
-                    if thought.metrics and thought.metrics.logical_coherence >= 0.9:
-                        archive_result = self.pattern_archiver.archive_thought(thought, session_id)
+                # 4b. [LTP] Archive only the latest thought candidate.
+                # Scanning entire history on every step causes O(n^2) growth across long sessions.
+                if updated_history:
+                    latest_thought = updated_history[-1]
+                    if latest_thought.metrics and latest_thought.metrics.logical_coherence >= 0.9:
+                        archive_result = self.pattern_archiver.archive_thought(latest_thought, session_id)
                         if archive_result.archived:
                             logger.info(f"[LTP] Golden pattern archived: {archive_result.pattern_id}")
 
                 # Attach usage block to result for tool output
-                live_rate = history[-1].metrics.currency_rate_idr if history else ForexService.DEFAULT_RATE
+                live_rate = updated_history[-1].metrics.currency_rate_idr if updated_history else ForexService.DEFAULT_RATE
                 result["usage"] = {
                     "model_used": session.model_id,
                     "session_totals": {
@@ -218,7 +232,7 @@ class CognitiveOrchestrator:
                         "cost_idr": session.total_cost_idr
                     },
                     "token_economy": {
-                        "proactive_compression": len(history) > 5,
+                        "proactive_compression": len(updated_history) > 5,
                         "summary_active": "historical_summary" in payload
                     },
                     "currency_meta": {
@@ -227,11 +241,11 @@ class CognitiveOrchestrator:
                         "projection_year": 2026
                     }
                 }
-            
+
             # 5. [HITL TRIGGER] Evaluation for Clearance Checkpoint
             # If engine finished or converged, and profile is HITL, trigger the stop
             convergence = self.sequential.evaluate_convergence(
-                session_id, 
+                session_id,
                 payload.get("next_thought_needed", True),
                 metrics=result.get("metrics")
             )
@@ -247,12 +261,35 @@ class CognitiveOrchestrator:
                 stop_result = self.autonomous.trigger_human_stop(session_id, executive_summary)
                 # Merge HITL instructions into the final result
                 result.update(stop_result)
-            
+
+            # Record successful outcome for adaptive learning
+            try:
+                if session:
+                    domain = classify_problem_domain(session.problem_statement)
+                    self.router.record_outcome(domain, strategy.value, success=True)
+
+                    # Auto-trigger Hippocampus learning on session conclusion
+                    if hasattr(self, "digital_hippocampus") and self.digital_hippocampus:
+                        try:
+                            self.digital_hippocampus.analyze_session(session_id)
+                            logger.info(f"[ORCHESTRATOR] Auto-learned from session {session_id}")
+                        except Exception as e:
+                            logger.warning(f"[ORCHESTRATOR] Auto-learning failed: {e}")
+            except Exception:
+                pass
+
             return result
         except Exception as e:
             logger.exception(f"Execution failed for strategy {strategy.value}")
+            # Record failure
+            try:
+                if session:
+                    domain = classify_problem_domain(session.problem_statement)
+                    self.router.record_outcome(domain, strategy.value, success=False)
+            except Exception:
+                pass
             return {
-                "status": "error", 
+                "status": "error",
                 "strategy": strategy.value,
                 "message": str(e)
             }
@@ -260,7 +297,7 @@ class CognitiveOrchestrator:
     def start_session(self, problem_statement: str, profile: str = "balanced", model_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Entry point for starting a cognitive session.
-        
+
         Phase 0: Meta-Cognitive Routing with Automatic Pattern Injection
         - Initializes the state with 'Automatic Pipeline' recommendation
         - Auto-detects model_id from ENV if not provided
@@ -268,36 +305,68 @@ class CognitiveOrchestrator:
         - Loads Anti-Patterns to prevent known failures (Immune System)
         """
         logger.info(f"Initializing new CCT session. Profile: {profile}")
-        
+
         # [PHASE 0] Identity Layer Ignition (Digital Symbiosis)
         identity_context = self.identity.load_identity()
-        
+
         # [PHASE 0] Model Detection
         if not model_id:
             # Order of priority: ENV[LLM_MODEL] -> ENV[CCT_DEFAULT_MODEL] -> Settings.default_model -> Baseline fallback
             model_id = os.environ.get("LLM_MODEL") or os.environ.get("CCT_DEFAULT_MODEL")
-            
+
         try:
             try:
                 cct_profile = CCTProfile(profile.lower())
             except ValueError:
                 cct_profile = CCTProfile.BALANCED
                 logger.warning(f"Invalid profile {profile}, defaulting to balanced")
-                
+
             # 1. DESIGN DYNAMIC PIPELINE (Phase 0 - Meta-Cognitive Routing)
             suggested_pipeline = self.router.determine_initial_pipeline(problem_statement)
-            
+
             # 2. INITIALIZE SESSION
             session = self.memory.create_session(
-                problem_statement, 
-                cct_profile, 
+                problem_statement,
+                cct_profile,
                 estimated_thoughts=len(suggested_pipeline)
             )
-            
+
+            # [REASONING TRACE] Initialize unique trace ID (Checklist 0x9)
+            session.identity_layer = {
+                **(session.identity_layer or {}),
+                "reasoning_trace_id": f"trace_{uuid.uuid4().hex[:12]}"
+            }
+
             # Apply detected/provided model_id
             if model_id:
                 session.model_id = model_id
-            
+
+            mimic_payload: Dict[str, Any] = {}
+            if cct_profile == CCTProfile.MIMIC_USER:
+                inference = {}
+                if self.digital_hippocampus:
+                    inference = self.digital_hippocampus.infer_current_context(
+                        problem_statement=problem_statement
+                    )
+
+                confidence = float(inference.get("confidence", 0.0) or 0.0)
+                decision = str(inference.get("decision", "fallback_balanced"))
+                persona = inference.get("persona")
+                habit = inference.get("habit")
+                behaviour = inference.get("behaviour")
+
+                mimic_payload = {
+                    "decision": decision,
+                    "confidence": confidence,
+                    "persona": persona,
+                    "habit": habit,
+                    "behaviour": behaviour,
+                    "signals": inference.get("signals") or [],
+                    "needs_confirmation": bool(inference.get("needs_confirmation", False)),
+                    "confirmation_question": inference.get("confirmation_question"),
+                    "reasoning_priors": inference.get("reasoning_priors") or "",
+                }
+
             # 3. [PHASE 0] AUTOMATIC PATTERN INJECTION (Evolutionary Memory)
             # Inject relevant Golden Thinking Patterns and Anti-Patterns
             injector = PatternInjector(self.memory)
@@ -305,12 +374,11 @@ class CognitiveOrchestrator:
                 session_id=session.session_id,
                 problem_statement=problem_statement
             )
-            
-            # Also get legacy knowledge injection for backward compatibility
-            knowledge = self.memory.get_relevant_knowledge(problem_statement)
-            injected_patterns = knowledge.get("thinking_patterns") or []
-            injected_failures = knowledge.get("anti_patterns") or []
-            
+
+            # Keep backward-compatible payload shape using the same selected sets.
+            injected_patterns = injection_result.selected_patterns
+            injected_failures = injection_result.selected_anti_patterns
+
             # 4. ENRICH SESSION STATE
             session.suggested_pipeline = suggested_pipeline
             session.identity_layer = identity_context
@@ -322,14 +390,27 @@ class CognitiveOrchestrator:
                 "injected_anti_patterns_count": injection_result.anti_patterns_injected,
                 "relevance_scores": injection_result.relevance_scores
             }
+            if mimic_payload:
+                session.identity_layer = {
+                    **(session.identity_layer or {}),
+                    "persona": mimic_payload.get("persona"),
+                    "habit": mimic_payload.get("habit"),
+                    "behaviour": mimic_payload.get("behaviour"),
+                    "mimic_confidence": mimic_payload.get("confidence"),
+                    "mimic_decision": mimic_payload.get("decision"),
+                }
+                session.knowledge_injection = {
+                    **(session.knowledge_injection or {}),
+                    "mimic_user": mimic_payload,
+                }
             self.memory.update_session(session)
-            
+
             logger.info(
                 f"[Phase 0] Session {session.session_id}: Injected "
                 f"{injection_result.patterns_injected} patterns, "
                 f"{injection_result.anti_patterns_injected} anti-patterns"
             )
-            
+
             return {
                 "status": "success",
                 "session_id": session.session_id,
@@ -341,13 +422,14 @@ class CognitiveOrchestrator:
                 "injected_anti_patterns_count": injection_result.anti_patterns_injected,
                 "legacy_skills_count": len(injected_patterns),
                 "legacy_failures_count": len(injected_failures),
+                "mimic": mimic_payload or None,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
         except Exception as e:
             logger.error(f"Failed to start session: {str(e)}")
             return {"status": "error", "message": f"Session initialization failed: {str(e)}"}
 
-    def check_and_pivot(self, session_id: str) -> None:
+    def check_and_pivot(self, session_id: str, history: Optional[List[EnhancedThought]] = None) -> None:
         """
         [ROUTER] Evaluation hook to see if the session needs a strategy pivot.
         """
@@ -355,12 +437,12 @@ class CognitiveOrchestrator:
         if not session:
             return
 
-        history = self.memory.get_session_history(session_id)
+        history = history if history is not None else self.memory.get_session_history(session_id)
         if not history:
             return
 
         next_best_strat = self.router.next_strategy(session, history)
-        
+
         # If the router suggests a strategy different from our next planned one, we log a 'Pivot suggestion'
         planned_index = session.current_thought_number
         if planned_index < len(session.suggested_pipeline):
@@ -370,11 +452,11 @@ class CognitiveOrchestrator:
                 # In a fully autonomous mode, we would update session.suggested_pipeline here.
 
     def log_failure(
-        self, 
-        session_id: str, 
-        thought_id: str, 
-        category: str, 
-        failure_reason: str, 
+        self,
+        session_id: str,
+        thought_id: str,
+        category: str,
+        failure_reason: str,
         corrective_action: str
     ) -> Dict[str, Any]:
         """
@@ -385,7 +467,7 @@ class CognitiveOrchestrator:
             # 1. Fetch context from memory
             session = self.memory.get_session(session_id)
             thought = self.memory.get_thought(thought_id)
-            
+
             if not session or not thought:
                 return {"status": "error", "message": "Session or Thought not found."}
 
@@ -403,7 +485,7 @@ class CognitiveOrchestrator:
 
             # 3. Persist to Immune System
             self.memory.save_anti_pattern(failure)
-            
+
             return {
                 "status": "success",
                 "failure_id": failure.id,
@@ -413,3 +495,17 @@ class CognitiveOrchestrator:
         except Exception as e:
             logger.error(f"Failed to log failure: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+    async def _run_consolidation(self, llm_instance_id: Optional[str] = None) -> None:
+        """
+        Background consolidation: episodic → semantic memory transfer.
+        Runs async so it doesn't block the main thinking flow.
+        """
+        try:
+            report = self.consolidation.consolidate(llm_instance_id=llm_instance_id)
+            logger.info(
+                f"[CONSOLIDATION] Background cycle: {report.patterns_promoted} promoted, "
+                f"{report.patterns_pruned} pruned, {report.meta_patterns_detected} meta-patterns"
+            )
+        except Exception as e:
+            logger.error(f"[CONSOLIDATION] Background cycle failed: {e}")

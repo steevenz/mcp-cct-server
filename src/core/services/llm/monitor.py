@@ -91,7 +91,7 @@ class MonitorService:
             providers.append("openai")
         if self.settings.anthropic_api_key:
             providers.append("anthropic")
-        if self.settings.ollama_base_url:
+        if self.settings.ollama_base_url and self.settings.llm_provider == "ollama":
             providers.append("ollama")
         return providers
     
@@ -193,16 +193,16 @@ class MonitorService:
         start_time = time.time()
         
         try:
-            # Temporarily override provider settings
-            original_provider = self.settings.llm_provider
-            self.settings.llm_provider = provider
-            
-            response = await self.thought_service.generate_thought(test_prompt, test_system)
+            if self.thought_service is None:
+                raise ValueError("Thought service is not configured")
+
+            response = await self.thought_service.generate_thought(
+                test_prompt,
+                test_system,
+                provider_override=provider,
+            )
             latency_ms = (time.time() - start_time) * 1000
-            
-            # Restore original provider
-            self.settings.llm_provider = original_provider
-            
+
             is_success = "READY" in response.upper()
             
             return {

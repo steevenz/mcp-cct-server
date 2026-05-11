@@ -54,8 +54,9 @@ class LinuxServiceManager:
     
     def __init__(self, project_root: str | None = None):
         self.project_root = Path(project_root) if project_root else PROJECT_ROOT
-        self.python_exe = self._find_python()
         self.venv_python = self.project_root / ".venv" / "bin" / "python"
+        self.port = os.getenv("CCT_PORT", "8001").strip() or "8001"
+        self.python_exe = self._find_python()
     
     def _find_python(self) -> str:
         """Find Python executable, preferring venv."""
@@ -79,7 +80,7 @@ RestartSec=10
 Environment="PYTHONPATH={self.project_root}"
 Environment="CCT_TRANSPORT=sse"
 Environment="CCT_HOST=0.0.0.0"
-Environment="CCT_PORT=8001"
+Environment="CCT_PORT={self.port}"
 
 [Install]
 WantedBy=multi-user.target
@@ -219,8 +220,9 @@ class MacOSServiceManager:
     
     def __init__(self, project_root: str | None = None):
         self.project_root = Path(project_root) if project_root else PROJECT_ROOT
-        self.python_exe = self._find_python()
         self.venv_python = self.project_root / ".venv" / "bin" / "python"
+        self.port = os.getenv("CCT_PORT", "8001").strip() or "8001"
+        self.python_exe = self._find_python()
     
     def _find_python(self) -> str:
         """Find Python executable, preferring venv."""
@@ -268,7 +270,7 @@ class MacOSServiceManager:
         <key>CCT_HOST</key>
         <string>0.0.0.0</string>
         <key>CCT_PORT</key>
-        <string>8001</string>
+        <string>{self.port}</string>
     </dict>
 </dict>
 </plist>

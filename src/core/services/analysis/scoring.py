@@ -98,6 +98,8 @@ class ScoringService:
                 logical_coherence=0.5,
                 evidence_strength=0.5,
                 novelty_score=1.0,
+                confidence_score=0.4,  # Moderate confidence for short thoughts
+                contradiction_flags=[], # Default for skip analysis
                 input_tokens=in_tokens,
                 output_tokens=out_tokens,
                 input_cost_usd=costs["input_usd"],
@@ -124,11 +126,19 @@ class ScoringService:
         # 5. Evidence Strength
         evidence_score = self._calculate_evidence(content)
 
+        # 6. Confidence Scoring (Checklist 0x4)
+        confidence = self._calculate_confidence(clarity, coherence, evidence_score, density, content)
+
+        # 7. Contradiction Detection (Checklist 0x5)
+        contradictions = self._detect_contradictions(content, history)
+
         metrics = ThoughtMetrics(
             clarity_score=round(clarity, 3),
             logical_coherence=round(coherence, 3),
             evidence_strength=round(evidence_score, 3),
             novelty_score=round(novelty, 3),
+            confidence_score=round(confidence, 3),
+            contradiction_flags=contradictions,
             input_tokens=in_tokens,
             output_tokens=out_tokens,
             input_cost_usd=costs["input_usd"],
@@ -145,10 +155,54 @@ class ScoringService:
             f"Thought {thought.id} scored: "
             f"Clarity={metrics.clarity_score:.2f}, "
             f"Coherence={metrics.logical_coherence:.2f}, "
-            f"Novelty={metrics.novelty_score:.2f}"
+            f"Confidence={metrics.confidence_score:.2f}, "
+            f"Contradictions={len(contradictions)}"
         )
 
         return metrics
+
+    def _calculate_confidence(self, clarity: float, coherence: float, evidence: float, density: float, content: str) -> float:
+        """
+        Calculate confidence score based on weighted quality metrics.
+        """
+        # Base weight distribution
+        score = (clarity * 0.2) + (coherence * 0.3) + (evidence * 0.4) + (density * 0.1)
+        
+        # Penalty for extremely short reasoning (hallucination risk)
+        if len(content) < 50:
+            score *= 0.6
+        elif len(content) < 100:
+            score *= 0.8
+            
+        return min(1.0, score)
+
+    def _detect_contradictions(self, content: str, history: List[EnhancedThought]) -> List[str]:
+        """
+        Heuristic contradiction detection.
+        Flags potential logical conflicts with previous reasoning steps.
+        """
+        flags = []
+        if not history:
+            return flags
+
+        # Simple keyword negation check
+        negations = {"not", "never", "cannot", "impossible", "refute", "incorrect", "wrong", "however", "but"}
+        current_tokens = set(_cached_tokenize(content.lower()))
+        
+        # Only check against the immediate parent for performance in MVP
+        parent = history[-1]
+        parent_tokens = set(_cached_tokenize(parent.content.lower()))
+        
+        # Check for direct negation of parent's core nouns/verbs
+        common_concepts = parent_tokens.intersection(current_tokens)
+        has_negation = any(neg in current_tokens for neg in negations)
+        
+        if has_negation and len(common_concepts) > 3:
+            # If we are talking about the same things but using negation words,
+            # it might be a contradiction or a pivot.
+            flags.append(f"Potential conflict with parent thought {parent.id} on shared concepts.")
+
+        return flags
 
     def _calculate_coherence(self, thought: EnhancedThought, history: List[EnhancedThought], content: str) -> float:
         """

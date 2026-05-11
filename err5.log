@@ -1,0 +1,37 @@
+C:\Users\steevenz\AppData\Roaming\Python\Python314\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.4.3)/charset_normalizer (3.4.5) doesn't match a supported version!
+  warnings.warn(
+2026-05-09 20:28:15,593 - [INFO] - cct-mcp-server - Bootstrapping CCT Cognitive Infrastructure...
+2026-05-09 20:28:15,596 - [INFO] - src.engines.memory.manager - SQLite Memory mapped to: C:\Users\steevenz\MCP\mcp-cct-server\database\cct_memory.db
+2026-05-09 20:28:16,152 - [INFO] - src.core.services.llm.smart - [SMARTLLM] Gemma 2B loaded (Tier 1)
+2026-05-09 20:28:16,156 - [INFO] - src.core.services.llm.smart - [SMARTLLM] Gemma 9B loaded (Tier 2)
+2026-05-09 20:28:16,157 - [INFO] - cct-mcp-server - [BOOTSTRAP] Using SmartLLMService (local-first, online-boost)
+2026-05-09 20:28:16,158 - [INFO] - src.core.services.user.identity - [IDENTITY] Provisioning complete - Tier 1 (Zero-Config) active
+2026-05-09 20:28:16,159 - [INFO] - src.core.services.learning.hippocampus - [HIPPOCAMPUS] Loaded 0 preferences, 0 rejections, 0 patterns
+2026-05-09 20:28:16,159 - [INFO] - src.core.services.learning.hippocampus - [HIPPOCAMPUS] Digital Hippocampus initialized for architectural style learning
+2026-05-09 20:28:16,470 - [INFO] - src.core.services.llm.critic - [REVIEW] External review not configured. Will use fallback chain.
+2026-05-09 20:28:16,475 - [INFO] - src.core.services.evaluation.clearance - [INTERNAL_CLEARANCE] Service initialized with thresholds: logic=0.85, consistency=0.8, evidence=0.75
+2026-05-09 20:28:16,479 - [INFO] - src.modes.registry - Registry: Specialized Hybrid registered [actor_critic_loop]
+2026-05-09 20:28:16,480 - [INFO] - src.modes.registry - Registry: Specialized Hybrid registered [unconventional_pivot]
+2026-05-09 20:28:16,480 - [INFO] - src.modes.registry - Registry: Specialized Hybrid registered [long_term_horizon]
+2026-05-09 20:28:16,480 - [INFO] - src.modes.registry - Registry: Specialized Hybrid registered [multi_agent_fusion]
+2026-05-09 20:28:16,480 - [INFO] - src.modes.registry - Registry: Specialized Hybrid registered [council_of_critics]
+2026-05-09 20:28:16,481 - [INFO] - src.modes.registry - Cognitive Engine Registry initialized with 45 engines.
+2026-05-09 20:28:16,482 - [INFO] - src.engines.orchestrator - Cognitive Orchestrator (with Identity/Fusion/AdaptiveRouter/Autonomous/Skills/PatternArchiver/Consolidation/InternalClearance/EvalFirst/TaskDecomposition) initialized.
+2026-05-09 20:28:16,512 - [INFO] - src.tools.simplified - Simplified Tools registered: start_thinking, reframe_problem, brainstorm_alternatives, continue_thinking, recall_thinking, decompose_thinking, evaluate_thinking, plan_thinking, branch_thought, export_thought, log_thought, health_thought, consolidate_thinking, review_thinking
+2026-05-09 20:28:16,513 - [WARNING] - cct-mcp-server - Failed to register planning tools: register_planning_tools() got an unexpected keyword argument 'settings'
+C:\Users\steevenz\MCP\mcp-cct-server\src\main.py:238: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("shutdown")
+2026-05-09 20:28:16,561 - [INFO] - cct-mcp-server - Custom MCP SSE endpoint mounted at /cognitive-api/v1/sync
+2026-05-09 20:28:16,562 - [INFO] - cct-mcp-server - Launching FastAPI Host on 0.0.0.0:8002...
+2026-05-09 20:28:16,562 - [INFO] - cct-mcp-server - SSE Endpoint: http://0.0.0.0:8002/cognitive-api/v1/sync
+2026-05-09 20:28:16,563 - [INFO] - cct-mcp-server - Dashboard Security: ACTIVE (X-API-KEY)
+INFO:     Started server process [11444]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8002 (Press CTRL+C to quit)
+2026-05-09 20:29:10,288 - [WARNING] - cct-mcp-server - AUTH_TLS_WARNING: insecure http request in local/dev mode

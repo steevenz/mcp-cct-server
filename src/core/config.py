@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
 PRD_ID = "20260412-000000-cct-mcp-scaffold"
+logger = logging.getLogger("cct-config")
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +21,12 @@ class Settings:
     pricing_path: str
     default_model: str
     identity_dir: str
-    dashboard_api_key: str
+    bootstrap_api_key: str
+    auth_mode: str
+    auth_legacy_enabled: bool
+    auth_default_ttl_days: int
+    auth_tls_dev_warn_only: bool
+    env: str
     mcp_secret: str | None
     # User operational preferences
     max_thoughts: int
@@ -37,6 +44,9 @@ class Settings:
     openai_api_key: str | None
     anthropic_api_key: str | None
     gemini_api_key: str | None
+    openrouter_api_key: str | None
+    deepseek_api_key: str | None
+    ninerouter_api_key: str | None
     ollama_base_url: str | None
     # External Critic configuration (Cross-Model Audit)
     critic_llm_api_url: str | None
@@ -70,7 +80,27 @@ def _parse_float(value: str, *, min_value: float, max_value: float, field_name: 
 
 
 def load_settings() -> Settings:
-    load_dotenv()
+    runtime_overrides = {
+        key: os.environ.get(key)
+        for key in list(os.environ.keys())
+        if key.startswith("CCT_")
+        or key in {
+            "OPENAI_API_KEY", 
+            "ANTHROPIC_API_KEY", 
+            "GEMINI_API_KEY", 
+            "OPENROUTER_API_KEY",
+            "DEEPSEEK_API_KEY",
+            "NINEROUTER_API_KEY",
+            "OLLAMA_BASE_URL"
+        }
+    }
+
+    load_dotenv(override=True)
+
+    for key, value in runtime_overrides.items():
+        if value is not None:
+            os.environ[key] = value
+
     server_name = os.getenv("CCT_SERVER_NAME", "cct-mcp-server").strip()
     if not server_name:
         raise ValueError("Invalid server name")
@@ -97,19 +127,19 @@ def load_settings() -> Settings:
 
     # Optional paths and model with defaults from constants
     from src.core.constants import DEFAULT_DB_PATH, DEFAULT_PRICING_PATH, DEFAULT_MODEL, DEFAULT_IDENTITY_DIR
-    
+
     db_path = os.getenv("CCT_DB_PATH", DEFAULT_DB_PATH).strip()
     if not db_path:
         raise ValueError("Invalid database path")
-    
+
     identity_dir = os.getenv("CCT_IDENTITY_PATH", DEFAULT_IDENTITY_DIR).strip()
     if not identity_dir:
         raise ValueError("Invalid identity path")
-    
+
     pricing_path = os.getenv("CCT_PRICING_PATH", DEFAULT_PRICING_PATH).strip()
     if not pricing_path:
         raise ValueError("Invalid pricing path")
-    
+
     default_model = os.getenv("CCT_DEFAULT_MODEL", DEFAULT_MODEL).strip()
     if not default_model:
         raise ValueError("Invalid default model")
@@ -126,37 +156,66 @@ def load_settings() -> Settings:
         FOREX_DEFAULT_RATE,
         FOREX_API_URL,
     )
-    
+
     max_thoughts_raw = os.getenv("CCT_MAX_THOUGHTS", str(MAX_THOUGHTS_PER_SESSION)).strip()
     max_thoughts = _parse_int(max_thoughts_raw, min_value=10, max_value=10000, field_name="max thoughts")
-    
+
     max_content_length_raw = os.getenv("CCT_MAX_CONTENT_LENGTH", str(MAX_THOUGHT_CONTENT_LENGTH)).strip()
     max_content_length = _parse_int(max_content_length_raw, min_value=100, max_value=100000, field_name="max content length")
-    
+
     max_context_tokens_raw = os.getenv("CCT_MAX_CONTEXT_TOKENS", str(DEFAULT_MAX_CONTEXT_TOKENS)).strip()
     max_context_tokens = _parse_int(max_context_tokens_raw, min_value=1000, max_value=128000, field_name="max context tokens")
-    
+
     context_strategy = os.getenv("CCT_CONTEXT_STRATEGY", DEFAULT_CONTEXT_STRATEGY).strip().lower()
     if context_strategy not in CONTEXT_STRATEGIES:
         raise ValueError(f"Invalid context strategy: {context_strategy}. Options: {CONTEXT_STRATEGIES}")
-    
+
     tp_threshold_raw = os.getenv("CCT_TP_THRESHOLD", str(DEFAULT_TP_THRESHOLD)).strip()
     tp_threshold = _parse_float(tp_threshold_raw, min_value=0.0, max_value=1.0, field_name="TP threshold")
-    
+
     # Forex configuration
     forex_cache_ttl_raw = os.getenv("CCT_FOREX_CACHE_TTL", str(FOREX_CACHE_TTL)).strip()
     forex_cache_ttl = _parse_int(forex_cache_ttl_raw, min_value=60, max_value=604800, field_name="forex cache TTL")
-    
+
     forex_default_rate_raw = os.getenv("CCT_FOREX_DEFAULT_RATE", str(FOREX_DEFAULT_RATE)).strip()
     forex_default_rate = _parse_float(forex_default_rate_raw, min_value=1000.0, max_value=50000.0, field_name="forex default rate")
-    
+
     forex_api_url = os.getenv("CCT_FOREX_API_URL", FOREX_API_URL).strip()
     if not forex_api_url:
         raise ValueError("Invalid forex API URL")
 
     # Security Configuration
-    dashboard_api_key = os.getenv("CCT_DASHBOARD_API_KEY", "cct-dev-token-2026").strip()
+    bootstrap_api_key = os.getenv("CCT_BOOTSTRAP_API_KEY", "").strip()
+    legacy_dashboard_key = os.getenv("CCT_DASHBOARD_API_KEY", "").strip()
+    if not bootstrap_api_key:
+        if legacy_dashboard_key:
+            logger.warning(
+                "DEPRECATED_ENV_VAR: CCT_DASHBOARD_API_KEY is deprecated. Use CCT_BOOTSTRAP_API_KEY instead."
+            )
+        bootstrap_api_key = legacy_dashboard_key
+    if not bootstrap_api_key:
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            bootstrap_api_key = "test-bootstrap-key"
+        else:
+            raise ValueError("CCT_BOOTSTRAP_API_KEY must be set")
     mcp_secret = os.getenv("CCT_MCP_SECRET", "").strip() or None
+    env = os.getenv("CCT_ENV", "development").strip().lower() or "development"
+
+    auth_mode = os.getenv("CCT_AUTH_MODE", "dual").strip().lower() or "dual"
+    if auth_mode not in {"dual", "handshake_only", "legacy_only"}:
+        raise ValueError("Invalid auth mode")
+
+    auth_legacy_enabled = (os.getenv("CCT_AUTH_LEGACY_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"})
+
+    auth_default_ttl_days_raw = os.getenv("CCT_AUTH_DEFAULT_TTL_DAYS", "30").strip()
+    auth_default_ttl_days = _parse_int(
+        auth_default_ttl_days_raw,
+        min_value=1,
+        max_value=365,
+        field_name="auth default ttl days",
+    )
+
+    auth_tls_dev_warn_only = (os.getenv("CCT_AUTH_TLS_DEV_WARN_ONLY", "true").strip().lower() in {"1", "true", "yes", "on"})
 
     # Tool Group Configuration
     default_groups = "core,primitive,hybrid,hitl"
@@ -182,13 +241,21 @@ def load_settings() -> Settings:
         forex_cache_ttl=forex_cache_ttl,
         forex_default_rate=forex_default_rate,
         forex_api_url=forex_api_url,
-        dashboard_api_key=dashboard_api_key,
+        bootstrap_api_key=bootstrap_api_key,
+        auth_mode=auth_mode,
+        auth_legacy_enabled=auth_legacy_enabled,
+        auth_default_ttl_days=auth_default_ttl_days,
+        auth_tls_dev_warn_only=auth_tls_dev_warn_only,
+        env=env,
         mcp_secret=mcp_secret,
         enabled_tool_groups=enabled_tool_groups,
         llm_provider=os.getenv("CCT_LLM_PROVIDER", "").strip().lower() or None,
         openai_api_key=os.getenv("OPENAI_API_KEY", "").strip() or None,
         anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip() or None,
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip() or None,
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip() or None,
+        deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", "").strip() or None,
+        ninerouter_api_key=os.getenv("NINEROUTER_API_KEY", "").strip() or None,
         ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip() or None,
         # External Critic configuration
         critic_llm_api_url=os.getenv("CCT_CRITIC_API_URL", "").strip() or None,

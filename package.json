@@ -1,0 +1,28 @@
+{
+  "name": "cct-mcp",
+  "version": "1.1.0",
+  "description": "Multi-IDE/Multi-LLM Cognitive Computing Toolkit MCP server",
+  "private": false,
+  "type": "commonjs",
+  "prd_id": "20260509-multi-ide-transport-multiplex",
+  "bin": {
+    "cct-mcp": "./scripts/server/js/index.js",
+    "cct-server": "./scripts/server/js/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "cct-mcp": "node ./scripts/server/js/index.js",
+    "cct-server": "node ./scripts/server/js/index.js",
+    "cct-server:vscode": "node ./scripts/server/js/index.js --ide vscode --transport stdio --port 8010",
+    "cct-server:cursor": "node ./scripts/server/js/index.js --ide cursor --transport stdio --port 8011",
+    "cct-server:jetbrains": "node ./scripts/server/js/index.js --ide jetbrains --transport sse --port 8001",
+    "cct-server:windsurf": "node ./scripts/server/js/index.js --ide windsurf --transport sse --port 8002",
+    "cct-server:copilot": "node ./scripts/server/js/index.js --ide github_copilot --transport sse --port 8003",
+    "cct-server:all": "node ./scripts/server/js/index.js --ide multi --transport sse --port 8001",
+    "cct-bench": "python tests/benchmarks/concurrency_benchmark.py",
+    "cct-bench:quick": "python tests/benchmarks/concurrency_benchmark.py --mode=quick",
+    "cct-bench:stress": "python tests/benchmarks/concurrency_benchmark.py --mode=stress"
+  }
+}

@@ -26,7 +26,7 @@ class SkillsLoader:
         ],
         ThinkingStrategy.ADVERSARIAL_SIMULATION: [
             ActionSkill("ThreatModeler", "Structural analysis of attack vectors and boundary weaknesses.", []),
-            ActionSkill("SecurityScanner", "Mock implementation of static/dynamic security analysis tools.", [])
+            ActionSkill("SecurityScanner", "Static/dynamic security analysis tool orchestration.", [])
         ],
         ThinkingStrategy.SYSTEMIC: [
             ActionSkill("GraphViz", "Visualizing complex system dependencies and component hierarchies.", []),
@@ -70,7 +70,7 @@ class SkillsLoader:
         ThinkingStrategy.BRAINSTORMING: [
             ActionSkill("SocraticGate", "Mandating 3 clarifying questions for vague or complex tasks.", []),
             ActionSkill("DynamicQuestioner", "Generating high-leverage architectural questions vs static templates.", []),
-            ActionSkill("StatusReporter", "Using visual scan icons (✅🔄⏳❌) for mission transparency.", [])
+            ActionSkill("StatusReporter", "Providing concise progress reporting for mission transparency.", [])
         ],
         ThinkingStrategy.POST_MISSION_LEARNING: [
             ActionSkill("InstinctExtractor", "Extracting atomic learned behaviors from session tool data.", []),

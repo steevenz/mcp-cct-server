@@ -1,0 +1,8 @@
+{
+  "allowed_tables": [
+    "sessions",
+    "thoughts",
+    "thinking_patterns",
+    "anti_patterns"
+  ]
+}

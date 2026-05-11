@@ -6,5 +6,5 @@ class MultiAgentFusionInput(BaseModel):
     target_thought_id: str = Field(..., description="The ID of the base thought to be expanded by multiple personas")
     personas: List[str] = Field(
         default=["Architect", "Security Analyst", "Product Manager"],
-        description="The group of specialized personas to simulate for the fusion process"
+        description="The group of specialized personas to generate perspectives for the fusion process"
     )

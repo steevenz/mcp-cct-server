@@ -6,6 +6,8 @@ from pydantic import ValidationError
 from src.core.models.enums import ThinkingStrategy, ThoughtType
 from src.core.models.domain import EnhancedThought
 from src.modes.base import BaseCognitiveEngine
+from src.engines.memory.manager import MemoryManager
+from src.engines.sequential.engine import SequentialEngine
 from src.engines.fusion.orchestrator import FusionOrchestrator
 from .schemas import MultiAgentFusionInput
 
@@ -20,10 +22,10 @@ logger = logging.getLogger(__name__)
 
 class MultiAgentFusionEngine(BaseCognitiveEngine):
     """
-    Simulated Multi-Agent Council using the Fusion Orchestrator.
+    Multi-Agent Council using the Fusion Orchestrator.
     Divergent generation followed by convergent fusion.
     """
-    
+
     def __init__(
         self,
         memory: MemoryManager,
@@ -59,9 +61,9 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
         target_thought = self._get_thought_or_raise(validated_input.target_thought_id)
 
         persona_nodes = []
-        
+
         mode = self.autonomous.get_execution_mode(session.complexity)
-        
+
         # 1. PHASE: Divergent Perspectives (Persona Insights)
         if mode == "autonomous":
             logger.info(f"[MULTI-AGENT] Executing autonomous persona generation for session {session_id}")
@@ -77,7 +79,7 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
                 )
 
                 p_id = self._generate_thought_id("persona")
-                
+
                 # ACTUAL LLM CALL for persona insight
                 prompt = (
                     f"CONTEXT: {target_thought.content}\n"
@@ -105,7 +107,7 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
                 session.current_thought_number += 1
         else:
             logger.info(f"[MULTI-AGENT] Providing guidance for manual personas in session {session_id}")
-            # In Guided mode, we create ONE guidance thought instead of multiple mock ones
+            # In Guided mode, we create ONE guidance thought instead of multiple persona thoughts
             thought_number = session.current_thought_number + 1
             seq_context = self.sequential.process_sequence_step(
                 session_id=session_id,
@@ -113,11 +115,11 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
                 llm_estimated_total=session.estimated_total_thoughts,
                 next_thought_needed=True
             )
-            
+
             p_id = self._generate_thought_id("guidance")
             guidance_msg = self.guidance.format_guidance_message(ThinkingStrategy.MULTI_AGENT_FUSION)
             guidance_msg += f"\nSUGGESTED PERSONAS: {', '.join(validated_input.personas)}"
-            
+
             p_thought = EnhancedThought(
                 id=p_id,
                 content=guidance_msg,
@@ -138,9 +140,9 @@ class MultiAgentFusionEngine(BaseCognitiveEngine):
 
         # 2. PHASE: Convergent Synthesis (The Fusion)
         logger.debug(f"Handing off {len(persona_nodes)} perspectives to Fusion Engine.")
-        
+
         synthesis_goal = f"Synthesize expert perspectives on: {target_thought.content[:100]}..."
-        fusion_thought = self.fusion.fuse_thoughts(
+        fusion_thought = await self.fusion.fuse_thoughts(
             session_id=session_id,
             thought_ids=[n.id for n in persona_nodes],
             synthesis_goal=synthesis_goal,

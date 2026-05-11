@@ -46,7 +46,9 @@ def _load_translations(language: Language) -> dict[str, str]:
     except Exception as e:
         # Fallback to empty dict on error - use stderr to avoid protocol corruption
         import sys
-        print(f"Error loading localization file for {language}: {e}", file=sys.stderr)
+        sys.stderr.write(
+            f"localization_load_error language={language.value} error={type(e).__name__}\n"
+        )
     
     return {}
 

@@ -1,0 +1,17 @@
+{
+  "prd_id": "20260509-multi-ide-single-server",
+  "version": "1.1.0",
+  "description": "STDIO transport config. Each IDE gets its own NPX instance but they all connect to the shared Python server on port 8001.",
+  "mcpServers": {
+    "cct_mcp_vscode": {
+      "command": "npx",
+      "args": ["--yes", "--package", "c:/Users/steevenz/MCP/mcp-cct-server", "cct-mcp", "--ide", "vscode"],
+      "env": { "CCT_TRANSPORT": "stdio", "CCT_PORT": "8010", "CCT_IDE": "vscode" }
+    },
+    "cct_mcp_cursor": {
+      "command": "npx",
+      "args": ["--yes", "--package", "c:/Users/steevenz/MCP/mcp-cct-server", "cct-mcp", "--ide", "cursor"],
+      "env": { "CCT_TRANSPORT": "stdio", "CCT_PORT": "8011", "CCT_IDE": "cursor" }
+    }
+  }
+}

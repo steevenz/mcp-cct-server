@@ -1,0 +1,15 @@
+services:
+  cct-server:
+    restart: always
+    environment:
+      CCT_LOG_LEVEL: WARNING
+      CCT_MAX_SESSIONS: 500
+      CCT_BOOTSTRAP_API_KEY: ${CCT_BOOTSTRAP_API_KEY}
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G

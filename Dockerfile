@@ -27,12 +27,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # CCT Server Configuration
 ENV CCT_HOST=0.0.0.0 \
-    CCT_PORT=8000 \
+    CCT_PORT=8010 \
     CCT_TRANSPORT=sse \
     CCT_MAX_SESSIONS=128 \
     CCT_LOG_LEVEL=INFO \
     CCT_DB_PATH=/app/database/cct_memory.db \
-    CCT_PRICING_PATH=/app/database/datasets
+    CCT_PRICING_PATH=/app/database/datasets \
+    CCT_BOOTSTRAP_API_KEY=local-docker-key
 
 # Set working directory
 WORKDIR /app
@@ -45,6 +46,7 @@ ENV PATH=/root/.local/bin:$PATH
 
 # Copy source code
 COPY src/ ./src/
+COPY scripts/ ./scripts/
 
 # Copy .env.example for reference
 COPY .env.example .env.example
@@ -53,14 +55,14 @@ COPY .env.example .env.example
 RUN mkdir -p /app/database/datasets
 
 # Expose the designated MCP port
-EXPOSE 8000
+EXPOSE 8010
 
-# Health check
+# Health check (readiness): verifies HTTP endpoint is serving
 HEALTHCHECK --interval=30s \
             --timeout=10s \
             --start-period=5s \
             --retries=3 \
-            CMD python -c "import sys; import sqlite3; conn = sqlite3.connect('${CCT_DB_PATH}'); conn.execute('SELECT 1'); conn.close(); sys.exit(0)" || exit 1
+            CMD python -c "import os,sys,urllib.request; port=os.getenv('CCT_PORT','8010'); url=f'http://127.0.0.1:{port}/health'; r=urllib.request.urlopen(url, timeout=5); sys.exit(0 if r.status==200 else 1)" || exit 1
 
 # Define the entry point, executing the main server module
 CMD ["python", "-m", "src.main"]

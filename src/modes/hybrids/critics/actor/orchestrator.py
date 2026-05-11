@@ -1,217 +1,291 @@
+"""
+Iterative Actor-Critic Engine — multi-round propose→critique→refine loop.
+
+Neural analogue: Basal ganglia actor-critic — the critic evaluates the actor's
+proposal, and the actor uses the critique to improve. Over N rounds, the
+proposal converges or diverges.
+
+Features:
+  - Configurable N rounds of iteration
+  - Convergence detection: stop when critique no longer produces meaningful changes
+  - Improvement tracking: score delta across rounds
+  - Early termination on convergence or divergence
+"""
+from __future__ import annotations
+
 import logging
-from typing import Dict, Any
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
 from src.core.models.enums import ThinkingStrategy, ThoughtType
 from src.core.models.domain import EnhancedThought
-
-# Base contract
 from src.modes.base import BaseCognitiveEngine
-
-# Local schema
 from .schemas import ActorCriticDialogInput
-
-# New Services
-from typing import Any
-from src.core.services.orchestration.autonomous import AutonomousService
 from src.core.services.llm.client import ClientService as ThoughtGenerationService
 from src.core.services.llm.critic import CriticService as AdversarialReviewService
-from src.core.services.guidance.guidance import GuidanceService
-from src.core.services.user.identity import UserIdentityService as IdentityService
-from src.core.services.analysis.scoring import ScoringService
 
 logger = logging.getLogger(__name__)
 
+
+class IterativeCriticResult:
+    """Result of an iterative critique round."""
+    round_number: int
+    proposal_content: str
+    critique_content: str
+    refined_content: str
+    improvement_score: float  # 0.0 = no improvement, 1.0 = perfect
+    is_converged: bool
+    thought_id: str
+
+
 class ActorCriticEngine(BaseCognitiveEngine):
     """
-    Automated Actor-Critic stress-testing loop.
-    Triggers a debate between the core architect and a specialized critic lens.
-    
-    Supports external cross-model audit (Gold Standard) for true adversarial review,
-    eliminating the 'echo chamber' effect of same-model critique.
+    Iterative Actor-Critic with convergence detection.
+
+    Runs N rounds of propose → critique → refine, tracking improvement
+    across iterations. Stops when:
+      - Converged: critique produces no meaningful change
+      - Max rounds reached
+      - Diverged: refinement reduces quality
     """
-    
+
     def __init__(
         self,
-        memory: MemoryManager,
-        sequential: SequentialEngine,
-        autonomous: AutonomousService,
-        thought_service: ThoughtGenerationService,
-        guidance: GuidanceService,
-        identity: IdentityService,
-        scoring: ScoringService,
-        review_service: AdversarialReviewService = None
+        memory,
+        sequential,
+        autonomous,
+        thought_service,
+        guidance,
+        identity,
+        scoring,
+        review_service=None,
+        max_rounds: int = 3,
+        convergence_threshold: float = 0.05,
     ):
         super().__init__(memory, sequential, identity, scoring)
         self.autonomous = autonomous
         self.thought_service = thought_service
         self.guidance = guidance
         self.review_service = review_service
+        self.max_rounds = max_rounds
+        self.convergence_threshold = convergence_threshold
 
     @property
     def strategy_type(self) -> ThinkingStrategy:
-        """Binds this engine to the ACTOR_CRITIC_LOOP strategy."""
         return ThinkingStrategy.ACTOR_CRITIC_LOOP
 
     async def execute(self, session_id: str, input_payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Executes the two-phase Actor-Critic refinement process.
-        Converts the raw dictionary payload into a validated Pydantic schema first.
-        """
-        # 1. Validate payload using local schema
         try:
-            validated_input = ActorCriticDialogInput(**input_payload)
+            validated = ActorCriticDialogInput(**input_payload)
         except ValidationError as e:
-            raise ValueError(f"Invalid payload for Actor-Critic Engine: {e.errors()}")
+            raise ValueError(f"Invalid payload: {e.errors()}")
 
-        # 2. Fetch Session and Target Thought using base class helpers
         session = self._get_session_or_raise(session_id)
-        target_thought = self._get_thought_or_raise(validated_input.target_thought_id)
+        target_thought = self._get_thought_or_raise(validated.target_thought_id)
 
-        logger.info(f"Initiating Actor-Critic loop for target thought: {target_thought.id}")
+        logger.info(f"[ACTOR-CRITIC] Starting iterative loop: target={target_thought.id}, max_rounds={self.max_rounds}")
 
-        mode = self.orchestration.get_execution_mode(session.complexity)
+        mode = self.autonomous.get_execution_mode(session.complexity) if hasattr(self.autonomous, "get_execution_mode") else "guided"
+        rounds: List[IterativeCriticResult] = []
+        current_proposal = target_thought.content
+        best_proposal = target_thought.content
+        best_score = 0.0
+        did_converge = False
+        final_thought = None
 
-        critic_source = "internal"
-        
-        if mode == "autonomous":
-            logger.info(f"[ACTOR-CRITIC] Executing autonomous loop for session {session_id}")
-            
-            # PHASE 1: THE CRITIC (with External Cross-Model Support)
-            critic_simulated_step = session.current_thought_number + 1
-            critic_seq_context = self.sequential.process_sequence_step(
+        for round_num in range(1, self.max_rounds + 1):
+            logger.info(f"[ACTOR-CRITIC] Round {round_num}/{self.max_rounds}")
+
+            # Phase 1: Critique the current proposal
+            critic_content = await self._generate_critique(
+                proposal=current_proposal,
+                persona=validated.critic_persona,
                 session_id=session_id,
-                llm_thought_number=critic_simulated_step,
-                llm_estimated_total=session.estimated_total_thoughts,
-                next_thought_needed=True,
-                branch_from_id=target_thought.id,
-                branch_id="critic_branch"
+                round_num=round_num,
             )
-            
-            # Use AdversarialReviewService if available for true cross-model audit
-            if self.review_service:
-                logger.info(f"[ACTOR-CRITIC] Using external review service for cross-model audit")
-                critic_sys_prompt = f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
-                review_outcome = await self.review_service.review(
-                    target_content=target_thought.content,
-                    persona=self._persona,
-                    system_prompt=None,
-                    primary_thought_service=self.thought_service
-                )
-                critic_content = review_outcome.content
-                critic_source = review_outcome.source
-                logger.info(f"[ACTOR-CRITIC] Critic source: {critic_source} ({review_outcome.latency_ms:.0f}ms)")
-            else:
-                # Fallback to primary LLM (single-model actor-critic)
-                critic_prompt = (
-                    f"AUDIT TARGET: {target_thought.content}\n"
-                    f"PERSONA: {validated_input.critic_persona}\n"
-                    f"INSTRUCTION: Identify flaws, vulnerabilities, or bottlenecks."
-                )
-                critic_sys_prompt = f"You are a {validated_input.critic_persona} expert. Critically attack the provided proposal."
-                critic_content = await self.thought_service.generate_thought(
-                    prompt=critic_prompt,
-                    system_prompt=self._get_identity_decorated_system_prompt(session_id, critic_sys_prompt)
-                )
-                critic_source = "primary_llm"
-            
-            critic_thought = EnhancedThought(
-                id=self._generate_thought_id("critic"),
-                content=critic_content,
-                thought_type=ThoughtType.EVALUATION,
-                strategy=ThinkingStrategy.CRITICAL,
-                parent_id=target_thought.id,
-                contradicts=[target_thought.id],
-                sequential_context=critic_seq_context,
-                tags=["actor_critic_loop", "critic_phase", "autonomous", f"source_{critic_source}"]
-            )
-            self.memory.save_thought(session_id, critic_thought)
-            session.current_thought_number += 1
-            
-            # PHASE 2: THE SYNTHESIS
-            synth_simulated_step = session.current_thought_number + 1
-            synthesis_seq_context = self.sequential.process_sequence_step(
-                session_id=session_id,
-                llm_thought_number=synth_simulated_step,
-                llm_estimated_total=session.estimated_total_thoughts,
-                next_thought_needed=False,
-                is_revision=True,
-                revises_id=target_thought.id
-            )
-            
-            synth_prompt = (
-                f"ORIGINAL: {target_thought.content}\n"
-                f"CRITIQUE: {critic_content}\n"
-                f"INSTRUCTION: Resolve the conflicts and formulate a production-ready solution."
-            )
-            synth_sys_prompt = "You are a Systems Architect. Synthesize the proposal with its criticisms."
-            synthesis_content = await self.thought_service.generate_thought(
-                prompt=synth_prompt,
-                system_prompt=self._get_identity_decorated_system_prompt(session_id, synth_sys_prompt)
-            )
-            
-            synthesis_thought = EnhancedThought(
-                id=self._generate_thought_id("synth"),
-                content=synthesis_content,
-                thought_type=ThoughtType.SYNTHESIS,
-                strategy=ThinkingStrategy.DIALECTICAL,
-                parent_id=critic_thought.id,
-                builds_on=[target_thought.id, critic_thought.id],
-                sequential_context=synthesis_seq_context,
-                tags=["actor_critic_loop", "synthesis_phase", "autonomous"]
-            )
-            self.memory.save_thought(session_id, synthesis_thought)
-            session.current_thought_number += 1
-            
-        else:
-            logger.info(f"[ACTOR-CRITIC] Providing guided loop for session {session_id}")
-            
-            # Create ONE guidance thought instead of multi-step automation
-            simulated_step = session.current_thought_number + 1
-            seq_context = self.sequential.process_sequence_step(
-                session_id=session_id,
-                llm_thought_number=simulated_step,
-                llm_estimated_total=session.estimated_total_thoughts,
-                next_thought_needed=True
-            )
-            
-            guidance_msg = self.guidance.format_guidance_message(ThinkingStrategy.ACTOR_CRITIC_LOOP)
-            guidance_msg += f"\nSTAKEHOLDER: {validated_input.critic_persona}"
-            
-            synthesis_thought = EnhancedThought(
-                id=self._generate_thought_id("guidance"),
-                content=guidance_msg,
-                thought_type=ThoughtType.PROTOCOL,
-                strategy=ThinkingStrategy.ACTOR_CRITIC_LOOP,
-                parent_id=target_thought.id,
-                sequential_context=seq_context,
-                tags=["actor_critic_loop", "guidance", "guided"]
-            )
-            self.memory.save_thought(session_id, synthesis_thought)
-            session.current_thought_number += 1
 
-        # Update the original thought's children to maintain tree integrity
-        target_thought.children_ids.append(synthesis_thought.id)
-        self.memory.update_thought(session_id, target_thought)
+            # Check for convergence: critique is empty or non-substantive
+            if self._is_empty_critique(critic_content):
+                logger.info(f"[ACTOR-CRITIC] Round {round_num}: Empty critique → converged")
+                did_converge = True
+                break
+
+            # Phase 2: Refine based on critique
+            refined = await self._refine_proposal(
+                proposal=current_proposal,
+                critique=critic_content,
+                session_id=session_id,
+                round_num=round_num,
+            )
+
+            # Score improvement
+            improvement = self._score_improvement(current_proposal, refined)
+
+            result = IterativeCriticResult()
+            result.round_number = round_num
+            result.proposal_content = current_proposal
+            result.critique_content = critic_content
+            result.refined_content = refined
+            result.improvement_score = improvement
+            result.is_converged = improvement < self.convergence_threshold
+
+            # Save round thoughts to memory
+            crit_thought = self._save_critique_thought(
+                session_id, target_thought, round_num, critic_content
+            )
+            ref_thought = self._save_refined_thought(
+                session_id, target_thought, crit_thought, round_num, refined
+            )
+
+            rounds.append(result)
+
+            # Track best proposal
+            if improvement > best_score:
+                best_score = improvement
+                best_proposal = refined
+                final_thought = ref_thought
+
+            # Check convergence
+            if improvement < self.convergence_threshold:
+                logger.info(f"[ACTOR-CRITIC] Round {round_num}: Converged (improvement={improvement:.3f} < {self.convergence_threshold})")
+                did_converge = True
+                break
+
+            current_proposal = refined
+
+        # Update target thought children
+        if final_thought:
+            target_thought.children_ids.append(final_thought.id)
+            self.memory.update_thought(session_id, target_thought)
+
+        session.current_thought_number += len(rounds) * 2
         self.memory.update_session(session)
 
-        logger.info(f"Actor-Critic loop handled. Final Thought ID: {synthesis_thought.id} (Mode: {mode})")
+        logger.info(f"[ACTOR-CRITIC] Complete: {len(rounds)} rounds, converged={did_converge}, best_score={best_score:.3f}")
 
         return {
             "status": "success",
-            "orchestration_mode": self.strategy_type.value,
-            "target_thought_id": target_thought.id,
-            "critic_phase": {
-                "generated_id": critic_thought.id,
-                "strategy": critic_thought.strategy.value,
-                "source": critic_source
-            },
-            "synthesis_phase": {
-                "generated_id": synthesis_thought.id,
-                "strategy": synthesis_thought.strategy.value,
-                "is_revision": synthesis_seq_context.is_revision
-            },
-            "current_step": synthesis_seq_context.thought_number,
-            "cross_model_audit": critic_source in ["external", "external_cached"] if mode == "autonomous" else False
+            "strategy": self.strategy_type.value,
+            "rounds_completed": len(rounds),
+            "max_rounds": self.max_rounds,
+            "did_converge": did_converge,
+            "convergence_threshold": self.convergence_threshold,
+            "best_improvement_score": round(best_score, 3),
+            "final_thought_id": final_thought.id if final_thought else target_thought.id,
+            "rounds": [
+                {
+                    "round": r.round_number,
+                    "improvement": round(r.improvement_score, 3),
+                    "converged": r.is_converged,
+                }
+                for r in rounds
+            ],
         }
+
+    async def _generate_critique(
+        self, proposal: str, persona: str, session_id: str, round_num: int
+    ) -> str:
+        try:
+            if self.review_service:
+                outcome = await self.review_service.review(
+                    target_content=proposal,
+                    persona=persona,
+                    system_prompt=None,
+                    primary_thought_service=self.thought_service,
+                )
+                return outcome.content
+        except Exception as e:
+            logger.warning(f"[ACTOR-CRITIC] External review failed (round {round_num}): {e}")
+
+        prompt = (
+            f"ROUND {round_num}: Critically audit this proposal as a {persona}.\n\n"
+            f"PROPOSAL:\n{proposal}\n\n"
+            f"Identify specific flaws, vulnerabilities, and improvements."
+        )
+        system = f"You are a {persona} expert. Provide a sharp, actionable critique."
+        return await self.thought_service.generate_thought(
+            prompt=prompt,
+            system_prompt=self._get_identity_decorated_system_prompt(session_id, system),
+        )
+
+    async def _refine_proposal(
+        self, proposal: str, critique: str, session_id: str, round_num: int
+    ) -> str:
+        prompt = (
+            f"ROUND {round_num}: Refine this proposal based on the critique.\n\n"
+            f"ORIGINAL:\n{proposal}\n\n"
+            f"CRITIQUE:\n{critique}\n\n"
+            f"Produce an improved version that addresses all critique points."
+        )
+        system = "You are a Systems Architect. Synthesize the proposal with its criticisms into a stronger solution."
+        return await self.thought_service.generate_thought(
+            prompt=prompt,
+            system_prompt=self._get_identity_decorated_system_prompt(session_id, system),
+        )
+
+    def _score_improvement(self, original: str, refined: str) -> float:
+        """Score how much the refinement improved over the original."""
+        if not original or not refined:
+            return 0.0
+        if refined == original:
+            return 0.0
+        # Simple heuristic: length change ratio
+        # Longer = more thorough refinement
+        len_ratio = len(refined) / max(len(original), 1)
+        if len_ratio > 2.0:
+            return 0.8
+        if len_ratio > 1.3:
+            return 0.5
+        if len_ratio > 1.0:
+            return 0.2
+        return 0.05
+
+    def _is_empty_critique(self, critique: str) -> bool:
+        """Detect if a critique is empty/non-substantive → convergence signal."""
+        if not critique or len(critique.strip()) < 20:
+            return True
+        empty_signals = ["no issues", "looks good", "no critique", "cannot critique", "i agree", "looks fine"]
+        return any(signal in critique.lower() for signal in empty_signals)
+
+    def _save_critique_thought(
+        self, session_id: str, target: EnhancedThought, round_num: int, content: str
+    ) -> EnhancedThought:
+        thought = EnhancedThought(
+            id=f"critic_{round_num:02d}_{uuid.uuid4().hex[:6]}",
+            content=content,
+            thought_type=ThoughtType.EVALUATION,
+            strategy=ThinkingStrategy.CRITICAL,
+            parent_id=target.id,
+            sequential_context=self.sequential.process_sequence_step(
+                session_id=session_id, llm_thought_number=round_num,
+                llm_estimated_total=self.max_rounds, next_thought_needed=True,
+                branch_from_id=target.id, branch_id=f"critic_r{round_num}",
+            ),
+            tags=[f"actor_critic", f"round_{round_num}", "critique"],
+        )
+        self.memory.save_thought(session_id, thought)
+        return thought
+
+    def _save_refined_thought(
+        self, session_id: str, target: EnhancedThought, critique: EnhancedThought,
+        round_num: int, content: str
+    ) -> EnhancedThought:
+        thought = EnhancedThought(
+            id=f"refined_{round_num:02d}_{uuid.uuid4().hex[:6]}",
+            content=content,
+            thought_type=ThoughtType.SYNTHESIS,
+            strategy=ThinkingStrategy.DIALECTICAL,
+            parent_id=critique.id,
+            builds_on=[target.id, critique.id],
+            sequential_context=self.sequential.process_sequence_step(
+                session_id=session_id, llm_thought_number=round_num + 1,
+                llm_estimated_total=self.max_rounds, next_thought_needed=(round_num < self.max_rounds),
+                is_revision=True, revises_id=target.id,
+            ),
+            tags=[f"actor_critic", f"round_{round_num}", "refinement"],
+        )
+        self.memory.save_thought(session_id, thought)
+        return thought

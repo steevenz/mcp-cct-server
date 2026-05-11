@@ -1,0 +1,1 @@
+{"server":"cct-mcp-server","uptime_seconds":559,"llm_provider":"GUIDED","transport":"SSE","log_level":"INFO","global_usage":{"tokens":{"input":0,"output":0,"total":0},"costs":{"usd":0.0,"idr":0.0},"total_sessions":0,"llm_instance_id":"remote:127.0.0.1"},"connected_llms":{},"features":["multi_ide","hybrid_orchestration","actor_critic","memory_persistence","financial_telemetry"]}

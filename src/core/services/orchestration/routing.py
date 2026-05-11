@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 class RoutingService:
     """
     IntelligenceRouter: Dynamic Cognitive Strategy Decider (Domain Service).
-    
+
     Implements the 'Automatic Pipeline' requirement where the AI determines
     the reasoning path dynamically based on:
     1. Initial Problem Statement (Categories)
     2. Real-time Scoring Engine feedback (Clarity, Coherence thresholds)
     3. Convergence detection from the Fusion module
-    
+
     Enterprise-ready, follows the 'Lego' Principle and DDD.
     """
 
@@ -34,16 +34,18 @@ class RoutingService:
         self.scoring = scoring_engine
         # Metrics collector for tracking routing performance
         self.metrics_enabled = True
+        self._policy = PolicyService()
 
     def determine_initial_pipeline(self, problem_statement: str) -> List[ThinkingStrategy]:
         """
         Delegates initial pipeline selection to the Domain Policy Manager.
         """
-        return PipelineSelector.select_pipeline(problem_statement)
+        complexity = self._policy.complexity_service.detect_complexity(problem_statement).value
+        return self._policy.select_pipeline(problem_statement, complexity)
 
     def next_strategy(
-        self, 
-        session: CCTSessionState, 
+        self,
+        session: CCTSessionState,
         recent_thoughts: List[EnhancedThought]
     ) -> ThinkingStrategy:
         """
@@ -60,7 +62,12 @@ class RoutingService:
         # 1. [COGNITIVE CONVERGENCE] Check for Terminal Convergence
         if len(recent_thoughts) >= 3:
             if any(t.strategy == ThinkingStrategy.MULTI_AGENT_FUSION for t in recent_thoughts):
-                 pass
+                logger.info(
+                    f"[ROUTER] Fusion already executed. Routing to INTEGRATIVE | "
+                    f"session={session.session_id} | "
+                    f"thought_count={len(recent_thoughts)}"
+                )
+                return ThinkingStrategy.INTEGRATIVE
             elif all("persona_insight" in t.tags for t in recent_thoughts[-2:]):
                 logger.info(
                     f"[ROUTER] Converging: High density persona insights detected. Routing to MULTI_AGENT_FUSION | "
@@ -70,7 +77,7 @@ class RoutingService:
                 return ThinkingStrategy.MULTI_AGENT_FUSION
 
         # 2. [QUALITY AUDIT] Check for Quality Degradation (Pivot Logic)
-        if (metrics.clarity_score < self.PIVOT_THRESHOLD_CLARITY or 
+        if (metrics.clarity_score < self.PIVOT_THRESHOLD_CLARITY or
             metrics.logical_coherence < self.PIVOT_THRESHOLD_COHERENCE):
             logger.warning(
                 f"[ROUTER] Quality Drop Detected - Triggering UNCONVENTIONAL_PIVOT | "
@@ -98,7 +105,7 @@ class RoutingService:
         # 3. [ORCHESTRATION PATH] Follow the suggested pipeline or next step
         current_index = session.current_thought_number
         pipeline = session.suggested_pipeline
-        
+
         if pipeline and 0 <= current_index < len(pipeline):
             next_strat = pipeline[current_index]
             logger.info(
@@ -129,7 +136,7 @@ class RoutingService:
     def _calculate_convergence_factors(self, recent_thoughts: List[EnhancedThought]) -> Dict[str, bool]:
         """
         Calculate individual convergence factors for multi-factor analysis.
-        
+
         Returns dictionary with 5 boolean factors:
         - coherence_streak: High coherence for 2+ consecutive thoughts
         - strong_evidence: Evidence strength >= 0.8
@@ -139,10 +146,10 @@ class RoutingService:
         """
         last = recent_thoughts[-1]
         metrics = last.metrics
-        
+
         # Get recent metrics for analysis
         recent_metrics = [t.metrics for t in recent_thoughts[-3:] if t.metrics]
-        
+
         return {
             "coherence_streak": all(
                 m.logical_coherence >= 0.95 for m in recent_metrics[-2:]
@@ -152,7 +159,7 @@ class RoutingService:
                 1 for t in recent_thoughts[-3:] if "persona_insight" in t.tags
             ) >= 2,
             "no_degradation": all(
-                m.clarity_score >= self.PIVOT_THRESHOLD_CLARITY and 
+                m.clarity_score >= self.PIVOT_THRESHOLD_CLARITY and
                 m.logical_coherence >= self.PIVOT_THRESHOLD_COHERENCE
                 for m in recent_metrics
             ),
@@ -162,12 +169,12 @@ class RoutingService:
     def _check_elite_convergence(self, session: CCTSessionState, metrics, factors: Dict[str, bool]) -> bool:
         """
         Check for elite convergence (score >= 4/5 factors).
-        
+
         Elite convergence triggers early finish when multiple convergence
         factors are simultaneously satisfied.
         """
         convergence_score = sum(factors.values())
-        
+
         if convergence_score >= 4:
             reasons = []
             if factors["coherence_streak"]: reasons.append("high_coherence_streak")
@@ -175,7 +182,7 @@ class RoutingService:
             if factors["high_persona_density"]: reasons.append("persona_insights")
             if factors["no_degradation"]: reasons.append("no_degradation")
             if factors["is_conclusion"]: reasons.append("conclusion_type")
-            
+
             logger.info(
                 f"[ROUTER] Early Convergence Detected (score={convergence_score}/5): {', '.join(reasons)} | "
                 f"session={session.session_id} | "
@@ -269,7 +276,7 @@ class RoutingService:
     def should_finish(self, session: CCTSessionState, recent_thoughts: List[EnhancedThought]) -> bool:
         """
         Enhanced Early Convergence Detection with multi-factor analysis.
-        
+
         Convergence Criteria (from CCT v5.0 §6.D):
         1. Logical coherence >= 0.95 for 2+ consecutive thoughts
         2. Evidence strength >= 0.8
@@ -279,31 +286,31 @@ class RoutingService:
         """
         if not recent_thoughts or len(recent_thoughts) < 2:
             return False
-            
+
         last = recent_thoughts[-1]
         metrics = last.metrics
-        
+
         # Calculate convergence factors
         factors = self._calculate_convergence_factors(recent_thoughts)
-        
+
         # Check elite convergence (score >= 4/5)
         if self._check_elite_convergence(session, metrics, factors):
             return True
-        
+
         # Check standard convergence (conclusion type)
         if self._check_standard_convergence(session, metrics, factors["is_conclusion"]):
             return True
-        
+
         # Check timeout convergence (reached estimated steps)
         if self._check_timeout_convergence(session, metrics):
             return True
-        
+
         return False
 
     def get_routing_metrics(self) -> Dict[str, Any]:
         """
         Get summary of routing performance metrics.
-        
+
         Returns:
             Dictionary containing routing statistics including pivot triggers,
             convergence detections, and overall performance metrics.

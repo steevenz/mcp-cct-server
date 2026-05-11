@@ -10,6 +10,7 @@ from src.core.constants import (
     BOUNDARY_EXTENSION_INCREMENT,
 )
 from src.engines.memory.manager import MemoryManager
+from src.core.services.detector.convergence import ConvergenceService, ConvergenceLevel
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class SequentialEngine:
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
         self.revision_tracker = RevisionTracker()
+        self.convergence = ConvergenceService()
 
     def process_sequence_step(
         self, 
@@ -174,21 +176,22 @@ class SequentialEngine:
         if next_thought_needed:
             return {"is_ready": False, "reason": "LLM explicitly requested continuation."}
             
-        # [EARLY CONVERGENCE DETECTION] v5.0 Master Protocol
-        # Check for elite coherence and evidence density to save tokens
-        if metrics:
-            coherence = metrics.get("logical_coherence", 0.0)
-            evidence = metrics.get("evidence_strength", 0.0)
+        # [ELITE CONVERGENCE] Use 6-factor ConvergenceService
+        history = self.memory.get_session_history(session_id)
+        if len(history) >= 2:
+            conv_result = self.convergence.detect(session, history)
             
-            # High bar for convergence: Coherence > 0.95 AND Evidence > 0.8
-            if coherence >= 0.95 and evidence >= 0.8:
-                logger.info(f"Early Convergence detected for {session_id} (Coherence: {coherence}, Evidence: {evidence}).")
+            if conv_result.level in (ConvergenceLevel.ELITE, ConvergenceLevel.FULL):
+                reasons = ", ".join(conv_result.reasons)
+                logger.info(f"[CONVERGENCE] {conv_result.level.value.upper()} detected for {session_id} (score={conv_result.score}/6): {reasons}")
                 session.status = SessionStatus.COMPLETED
                 self.memory.update_session(session)
                 return {
-                    "is_ready": True, 
-                    "reason": "Elite convergence achieved (Metacognitive Audit success).",
-                    "early_stop": True
+                    "is_ready": True,
+                    "reason": f"Convergence achieved ({conv_result.level.value}, score={conv_result.score}/6): {reasons}",
+                    "early_stop": conv_result.level == ConvergenceLevel.ELITE,
+                    "convergence_score": conv_result.score,
+                    "convergence_confidence": round(conv_result.confidence, 2),
                 }
 
         minimum_depth = 3
@@ -198,12 +201,11 @@ class SequentialEngine:
         if session.requires_human_decision:
             return {"is_ready": False, "reason": "Awaiting human architectural decision."}
 
-        # Update status and save to DB
         session.status = SessionStatus.COMPLETED
         self.memory.update_session(session)
         
         return {
-            "is_ready": True, 
+            "is_ready": True,
             "reason": "Sequence limits met and no further thoughts required."
         }
 

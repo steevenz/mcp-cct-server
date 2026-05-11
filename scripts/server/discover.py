@@ -29,10 +29,11 @@ import time
 import socket
 import sys
 import os
-from typing import Optional, Dict, Any, List, Callable
+from typing import Optional, Dict, Any, List, Callable, Union
 from dataclasses import dataclass, asdict
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Configure logging
 logging.basicConfig(
@@ -42,6 +43,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 VERSION = "1.0.0"
+TLS_CA_BUNDLE_ENV = "CCT_CA_BUNDLE"
+
+
+def resolve_tls_verify(target_url: str) -> Union[bool, str]:
+    """
+    Resolve TLS verification mode for outbound HTTPS requests.
+    - HTTP targets do not use TLS verification.
+    - HTTPS targets enforce CA + hostname verification.
+    - If CCT_CA_BUNDLE is set, it must point to a valid file.
+    - If bundle exists but is unreadable due permissions, fallback to OS trust store with warning.
+    """
+    parsed = urlparse(target_url)
+    if parsed.scheme.lower() != "https":
+        return True
+
+    ca_bundle = os.getenv(TLS_CA_BUNDLE_ENV, "").strip()
+    if not ca_bundle:
+        return True
+
+    bundle_path = Path(ca_bundle).expanduser().resolve()
+    if not bundle_path.is_file():
+        raise RuntimeError(
+            f"{TLS_CA_BUNDLE_ENV} is set but file does not exist: {bundle_path}"
+        )
+
+    if not os.access(bundle_path, os.R_OK):
+        logger.warning(
+            "%s is set but unreadable due permissions (%s). Falling back to OS trust store.",
+            TLS_CA_BUNDLE_ENV,
+            bundle_path,
+        )
+        return True
+
+    return str(bundle_path)
+
+
+def build_async_http_client(target_url: str, timeout: float) -> httpx.AsyncClient:
+    """Create a hardened AsyncClient with strict TLS verification for HTTPS."""
+    verify_mode = resolve_tls_verify(target_url)
+    return httpx.AsyncClient(timeout=timeout, verify=verify_mode, follow_redirects=False)
 
 def show_banner():
     """Display the CCT banner with author info."""
@@ -83,7 +124,7 @@ class CCTServerDiscovery:
     
     DEFAULT_PORTS = [8000, 8001, 8002, 8080, 3000, 5000, 3001, 5001]
     DEFAULT_HOSTS = ["localhost", "127.0.0.1", "0.0.0.0"]
-    HEALTH_ENDPOINT = "/cognitive-api/v1/sync"
+    HEALTH_ENDPOINT = "/status"
     TIMEOUT = 2.0
     
     def __init__(
@@ -123,55 +164,49 @@ class CCTServerDiscovery:
     
     async def _check_server(self, host: str, port: int, verbose: bool = False) -> Optional[ServerInstance]:
         """Check if a CCT server is running at host:port."""
-        url = f"http://{host}:{port}"
-        health_url = f"{url}{self.HEALTH_ENDPOINT}"
+        if host.startswith("http://") or host.startswith("https://"):
+            base_url = host.rstrip("/")
+            parsed_host = urlparse(base_url).hostname or host
+            effective_url = f"{base_url}:{port}" if urlparse(base_url).port is None else base_url
+        else:
+            base_url = f"http://{host}:{port}"
+            parsed_host = host
+            effective_url = base_url
+
+        health_url = f"{effective_url}{self.HEALTH_ENDPOINT}"
         
         try:
-            # Try HTTP health endpoint first
+            # Try HTTP status endpoint first and validate CCT JSON signature.
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with build_async_http_client(health_url, self.timeout) as client:
                     response = await client.get(health_url)
-                    if response.status_code in (200, 404, 405):
-                        if verbose:
-                            logger.info(f"  ✓ {host}:{port} - HTTP endpoint responding")
-                        return ServerInstance(
-                            host=host,
-                            port=port,
-                            url=url,
-                            is_healthy=True,
-                            last_health_check=time.time()
-                        )
+                    if response.status_code == 200:
+                        content_type = response.headers.get("content-type", "")
+                        payload = response.json() if "application/json" in content_type else {}
+                        if isinstance(payload, dict) and payload.get("server") and payload.get("transport"):
+                            if verbose:
+                                logger.info(f"  ✓ {parsed_host}:{port} - CCT status signature verified")
+                            return ServerInstance(
+                                host=parsed_host,
+                                port=port,
+                                url=effective_url,
+                                is_healthy=True,
+                                last_health_check=time.time()
+                            )
             except httpx.HTTPError:
                 if verbose:
-                    logger.debug(f"  - {host}:{port} - HTTP not responding")
+                    logger.debug(f"  - {parsed_host}:{port} - endpoint not responding")
+            except RuntimeError as tls_error:
+                if verbose:
+                    logger.warning(f"  - {parsed_host}:{port} - TLS config rejected request: {tls_error}")
+                return None
             except Exception as e:
                 if verbose:
-                    logger.debug(f"  - {host}:{port} - HTTP error: {e}")
+                    logger.debug(f"  - {parsed_host}:{port} - endpoint error: {e}")
             
-            # Fallback: TCP connection check
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(self.timeout)
-                result = sock.connect_ex((host, port))
-                sock.close()
-                
-                if result == 0:
-                    if verbose:
-                        logger.info(f"  ✓ {host}:{port} - Port open (TCP)")
-                    return ServerInstance(
-                        host=host,
-                        port=port,
-                        url=url,
-                        is_healthy=True,
-                        last_health_check=time.time()
-                    )
-            except Exception as e:
-                if verbose:
-                    logger.debug(f"  - {host}:{port} - TCP error: {e}")
-                    
         except Exception as e:
             if verbose:
-                logger.debug(f"[DISCOVERY] Check failed for {host}:{port}: {e}")
+                logger.debug(f"[DISCOVERY] Check failed for {parsed_host}:{port}: {e}")
         
         return None
     
@@ -416,7 +451,7 @@ class SharedCCTClient:
         if not self.server_url:
             await self.connect()
         
-        async with httpx.AsyncClient() as client:
+        async with build_async_http_client(self.server_url or "", timeout=10.0) as client:
             response = await client.post(
                 f"{self.server_url}/cognitive-api/v1/sessions",
                 json={

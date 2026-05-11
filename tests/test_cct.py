@@ -5,13 +5,13 @@ import requests
 import time
 
 def test_thinking():
-    print("Testing 'thinking' tool...")
+    print("Testing 'start_thinking' tool...")
     url = "http://localhost:8001/messages" # Updated to port 8001
 
     payload = {
         "method": "tools/call",
         "params": {
-            "name": "thinking",
+            "name": "start_thinking",
             "arguments": {
                 "problem_statement": "How to design a sustainable city on Mars?",
                 "profile": "creative"

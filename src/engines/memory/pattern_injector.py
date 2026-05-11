@@ -23,6 +23,8 @@ class InjectionResult:
     anti_patterns_injected: int
     relevance_scores: Dict[str, float]
     injection_context: Dict[str, Any]
+    selected_patterns: List[GoldenThinkingPattern]
+    selected_anti_patterns: List[AntiPattern]
 
 
 class PatternInjector:
@@ -109,7 +111,9 @@ class PatternInjector:
             patterns_injected=len(patterns),
             anti_patterns_injected=len(anti_patterns),
             relevance_scores=relevance_scores,
-            injection_context=injection_context
+            injection_context=injection_context,
+            selected_patterns=patterns,
+            selected_anti_patterns=anti_patterns,
         )
     
     def _extract_keywords(self, problem_statement: str) -> List[str]:

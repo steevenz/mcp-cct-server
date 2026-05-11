@@ -1,0 +1,3 @@
+task_id: "adhoc-simplified-cct-tools-v6"
+status: "active"
+current_thought_process: "Index -> analyze -> patch -> verify: implement wrapper auto-handshake/rotate with .env persistence and update .env.example to latest auth contract."

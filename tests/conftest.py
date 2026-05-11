@@ -1,11 +1,13 @@
 import pytest
+import os
+from pathlib import Path
 from src.engines.memory.manager import MemoryManager
 from src.engines.orchestrator import CognitiveOrchestrator
 from src.engines.sequential.engine import SequentialEngine
 from src.modes.registry import CognitiveEngineRegistry
 from src.core.services.analysis.scoring import ScoringService
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.core.services.routing import IntelligenceRouter
+from src.core.services.orchestration.routing import RoutingService
 from src.core.models.domain import EnhancedThought, CCTSessionState, ThoughtMetrics
 from src.core.models.enums import ThoughtType, ThinkingStrategy, CCTProfile
 from src.core.models.contexts import SequentialContext
@@ -79,7 +81,7 @@ def fusion_orchestrator_base(memory_manager, sequential_engine, scoring):
 @pytest.fixture
 def automatic_router(scoring):
     """Provides an IntelligenceRouter for dynamic pipeline selection."""
-    return IntelligenceRouter(scoring=scoring)
+    return RoutingService(scoring_engine=scoring)
 
 @pytest.fixture
 def full_registry(memory_manager, sequential_engine, fusion_orchestrator_base, scoring):

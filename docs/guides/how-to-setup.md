@@ -30,46 +30,31 @@ This guide provides comprehensive step-by-step instructions to get the **Creativ
 
 ### Automated Setup (Recommended)
 
-The CCT project provides automated setup scripts that handle all dependencies, environment configuration, and service installation.
+The CCT project provides automated setup scripts that handle all dependencies, environment configuration, model downloads, and IDE registration.
 
 #### Windows
 ```powershell
-# Clone the repository
-git clone https://github.com/steevenz/mcp-cct-server.git
-cd mcp-cct-server
-
-# Run automated setup
-.\scripts\setup\setup.bat
-
-# Or with PowerShell
-.\scripts\setup\setup.ps1
+# Run automated setup with model download and IDE registration
+.\scripts\setup\setup.ps1 -Download -Register -Run
 
 # Available options:
-# --install-service  Install as Windows Service
-# --force            Force recreate .venv and reset database
-# --skip-deps        Skip dependency installation
-# --clean-reqs       Clean and reinstall requirements
-# --multi-agent      Configure for multi-agent mode
-# --port 8001        Set custom port
+# -Download          Download Gemma 2B & 9B models (Recommended)
+# -Register          Auto-register in Claude Desktop, Cursor, and Windsurf
+# -InstallService    Install as Windows Background Service
+# -MultiAgent        Configure for multi-agent shared server mode
+# -Force             Force recreate .venv and reset database
 ```
 
 #### Linux/macOS
 ```bash
-# Clone the repository
-git clone https://github.com/steevenz/mcp-cct-server.git
-cd mcp-cct-server
-
-# Run automated setup
-chmod +x scripts/setup/setup.sh
-./scripts/setup/setup.sh
+# Run automated setup with model download and IDE registration
+./scripts/setup/setup.sh --download --register --run
 
 # Available options:
-# --install-service  Install as systemd service
-# --force            Force recreate .venv and reset database
-# --skip-deps        Skip dependency installation
-# --clean-reqs       Clean and reinstall requirements
+# --download         Download Gemma 2B & 9B models
+# --register         Auto-register in IDE configuration files
+# --install-service  Install as systemd/launchd service
 # --multi-agent      Configure for multi-agent mode
-# --port 8001        Set custom port
 ```
 
 #### Python Cross-Platform

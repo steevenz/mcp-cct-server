@@ -59,12 +59,16 @@ class ConvergenceResult:
     """Result of convergence detection."""
     has_converged: bool
     level: ConvergenceLevel
-    score: int  # 0-6
-    max_score: int = 6
+    score: int
+    max_score: int
     reasons: List[str]
     factors: ConvergenceFactors
-    confidence: float  # 0.0 to 1.0
+    confidence: float
     recommendation: str
+
+    def __post_init__(self):
+        if not self.max_score:
+            self.max_score = 6
     
     @property
     def convergence_percentage(self) -> float:

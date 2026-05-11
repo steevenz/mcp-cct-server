@@ -26,7 +26,8 @@ class PolicyService:
         "SEC": {"security", "hack", "vulnerability", "auth", "harden", "encrypt", "protect", "injection", "cve"},
         "BIZ": {"market", "business", "strategy", "cost", "token", "price", "revenue", "profit", "roi", "product"},
         "PLAN": {"plan", "reason", "step-by-step", "recursive", "branching", "sequence", "workflow", "automated", "autonomous"},
-        "ENGINEERING": {"refactor", "optimize", "architecture", "test", "eval", "benchmark", "agentic", "implementation"}
+        "ENGINEERING": {"refactor", "optimize", "architecture", "test", "eval", "benchmark", "agentic", "implementation"},
+        "SCALABILITY": {"scaling", "scalability", "load", "performance", "bottleneck", "concurrency", "distributed", "cluster"}
     }
 
     # Standardized deep reasoning sequence for COMPLEX/SOVEREIGN tasks
@@ -50,6 +51,7 @@ class PolicyService:
         "BIZ": "Product Strategist",
         "DEBUG": "Lead Debugger",
         "FEAT": "UX Specialist",
+        "SCALABILITY": "Performance Engineer",
         "GENERIC": "Critical Reviewer"
     }
 
@@ -103,6 +105,13 @@ class PolicyService:
             ThinkingStrategy.ENGINEERING_DECONSTRUCTION,
             ThinkingStrategy.SYSTEMIC,
             ThinkingStrategy.DEDUCTIVE_VALIDATION,
+            ThinkingStrategy.POST_MISSION_LEARNING
+        ],
+        "SCALABILITY": [
+            ThinkingStrategy.ENGINEERING_DECONSTRUCTION,
+            ThinkingStrategy.SYSTEMIC,
+            ThinkingStrategy.LONG_TERM_HORIZON,
+            ThinkingStrategy.ACTOR_CRITIC_LOOP,
             ThinkingStrategy.POST_MISSION_LEARNING
         ]
     }
@@ -164,11 +173,16 @@ class PolicyService:
             return template
         
         # Fallback: Generic moderate pipeline
+        if complexity == "simple":
+            return [
+                ThinkingStrategy.LINEAR,
+                ThinkingStrategy.SYSTEMATIC,
+                ThinkingStrategy.INTEGRATIVE,
+            ]
         return [
-            ThinkingStrategy.EMPIRICAL_RESEARCH,
             ThinkingStrategy.FIRST_PRINCIPLES,
             ThinkingStrategy.SYSTEMIC,
-            ThinkingStrategy.INTEGRATIVE
+            ThinkingStrategy.INTEGRATIVE,
         ]
 
 # Alias for backward compatibility during migration

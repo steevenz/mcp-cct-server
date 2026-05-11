@@ -38,7 +38,7 @@ Download and install Docker Desktop from [docker.com](https://www.docker.com/pro
 
 ## 2. Quick Start
 
-### Build and Run
+### Build and Run (Zero-Manual)
 
 ```bash
 # Clone the repository
@@ -48,13 +48,11 @@ cd mcp-cct-server
 # Build the Docker image
 docker build -t cct-mcp-server:latest .
 
-# Run the container
+# Run the container (MCP ready on port 8010)
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
-  -e CCT_LLM_PROVIDER=gemini \
-  -e GEMINI_API_KEY=your_api_key_here \
   cct-mcp-server:latest
 ```
 
@@ -68,8 +66,21 @@ docker ps | grep cct-server
 docker logs cct-server
 
 # Test health endpoint
-curl http://localhost:8000/health
+curl http://localhost:8010/health
+
+# Test MCP sync endpoint (default key baked in image for local docker usage)
+curl -X POST http://localhost:8010/cognitive-api/v1/sync \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: local-docker-key" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}'
 ```
+
+The container is ready-to-use with defaults:
+- `CCT_PORT=8010`
+- `CCT_TRANSPORT=sse`
+- `CCT_BOOTSTRAP_API_KEY=local-docker-key`
+
+For production, override `CCT_BOOTSTRAP_API_KEY` with your own secret using `-e`.
 
 ---
 
@@ -92,10 +103,10 @@ nano .env
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
   -e CCT_HOST=0.0.0.0 \
-  -e CCT_PORT=8000 \
+  -e CCT_PORT=8010 \
   -e CCT_TRANSPORT=sse \
   -e CCT_LLM_PROVIDER=gemini \
   -e GEMINI_API_KEY=your_api_key \
@@ -108,7 +119,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
   cct-mcp-server:latest
 ```
@@ -117,7 +128,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
   -v $(pwd)/.env:/app/.env \
   cct-mcp-server:latest
@@ -126,14 +137,14 @@ docker run -d \
 ### Port Mapping
 
 ```bash
-# Default port 8000
-docker run -d -p 8000:8000 cct-mcp-server:latest
+# Default port 8010
+docker run -d -p 8010:8010 cct-mcp-server:latest
 
-# Custom port 8001
-docker run -d -p 8001:8000 -e CCT_PORT=8001 cct-mcp-server:latest
+# Custom host port mapping (container tetap di 8010)
+docker run -d -p 9000:8010 cct-mcp-server:latest
 
-# Multiple ports (if needed)
-docker run -d -p 8000:8000 -p 8001:8001 cct-mcp-server:latest
+# Multiple host aliases to the same container port (optional)
+docker run -d -p 8010:8010 -p 9010:8010 cct-mcp-server:latest
 ```
 
 ---
@@ -152,13 +163,13 @@ services:
     build: .
     container_name: cct-mcp-server
     ports:
-      - "8000:8000"
+      - "8010:8010"
     volumes:
       - ./database:/app/database
       - ./.env:/app/.env
     environment:
       - CCT_HOST=0.0.0.0
-      - CCT_PORT=8000
+      - CCT_PORT=8010
       - CCT_TRANSPORT=sse
       - CCT_LOG_LEVEL=INFO
     restart: unless-stopped
@@ -173,17 +184,22 @@ services:
 **Run with Docker Compose:**
 ```bash
 # Build and start
-docker-compose up -d
+docker compose up -d --build
+
+# Production profile (base + prod override)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # View logs
 docker-compose logs -f
 
 # Stop
-docker-compose down
+docker compose down
 
 # Stop and remove volumes
-docker-compose down -v
+docker compose down -v
 ```
+
+Warning: `docker compose down -v` akan menghapus volume database persistent. Pakai `down` biasa jika mau mempertahankan data sesi.
 
 ### Multi-Agent Setup with Docker Compose
 
@@ -195,13 +211,13 @@ services:
     build: .
     container_name: cct-multi-agent-server
     ports:
-      - "8001:8001"
+      - "8010:8010"
     volumes:
       - ./database:/app/database
       - ./.env:/app/.env
     environment:
       - CCT_HOST=0.0.0.0
-      - CCT_PORT=8001
+      - CCT_PORT=8010
       - CCT_TRANSPORT=sse
       - CCT_MAX_SESSIONS=500
       - CCT_LOG_LEVEL=INFO
@@ -212,7 +228,7 @@ services:
 ```bash
 docker-compose up -d
 
-# Connect multiple IDEs to http://localhost:8001
+# Connect multiple IDEs to http://localhost:8010
 ```
 
 ### Docker Compose with Environment File
@@ -225,7 +241,7 @@ services:
     build: .
     container_name: cct-mcp-server
     ports:
-      - "8000:8000"
+      - "8010:8010"
     volumes:
       - ./database:/app/database
     env_file:
@@ -247,7 +263,7 @@ services:
     build: .
     container_name: cct-mcp-server
     ports:
-      - "8000:8000"
+      - "8010:8010"
     volumes:
       - ./database:/app/database
       - ./logs:/app/logs
@@ -283,7 +299,7 @@ services:
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
   --memory="2g" \
   --cpus="1.5" \
@@ -304,7 +320,7 @@ USER cctuser
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   --read-only \
   --tmpfs /tmp \
   -v $(pwd)/database:/app/database \
@@ -315,7 +331,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   --cap-drop=ALL \
   --cap-add=NET_BIND_SERVICE \
   cct-mcp-server:latest
@@ -340,7 +356,7 @@ docker push yourusername/cct-mcp-server:latest
 docker pull yourusername/cct-mcp-server:latest
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   -v $(pwd)/database:/app/database \
   yourusername/cct-mcp-server:latest
 ```
@@ -359,10 +375,10 @@ docker logs cct-server
 **Check if port is in use:**
 ```bash
 # Linux/macOS
-lsof -i :8000
+lsof -i :8010
 
 # Windows
-netstat -ano | findstr :8000
+netstat -ano | findstr :8010
 ```
 
 **Check container status:**
@@ -405,7 +421,7 @@ docker stats cct-server
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   --memory="4g" \
   cct-mcp-server:latest
 ```
@@ -462,7 +478,7 @@ docker-compose up -d
 ```bash
 docker run -d \
   --name cct-server \
-  -p 8000:8000 \
+  -p 8010:8010 \
   --entrypoint ["python", "-m", "src.main", "--transport", "sse"] \
   cct-mcp-server:latest
 ```
@@ -477,7 +493,7 @@ services:
     build: .
     container_name: cct-mcp-server
     ports:
-      - "8000:8000"
+      - "8010:8010"
     volumes:
       - ./database:/app/database
     environment:
@@ -514,7 +530,7 @@ services:
       restart_policy:
         condition: on-failure
     ports:
-      - "8000:8000"
+      - "8010:8010"
     volumes:
       - cct-data:/app/database
     environment:
@@ -549,18 +565,21 @@ docker stack deploy -c docker-compose.yml cct-stack
 docker build -t cct-mcp-server:latest .
 
 # Run
-docker run -d -p 8000:8000 -v $(pwd)/database:/app/database cct-mcp-server:latest
+docker run -d -p 8010:8010 -v $(pwd)/database:/app/database cct-mcp-server:latest
 
-# Compose
-docker-compose up -d
+# Compose (dev/default)
+docker compose up -d --build
+
+# Compose (prod override)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Logs
 docker logs -f cct-server
-docker-compose logs -f
+docker compose logs -f
 
 # Stop
 docker stop cct-server
-docker-compose down
+docker compose down
 ```
 
 **Getting Help:**

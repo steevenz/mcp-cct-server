@@ -1,0 +1,44 @@
+{
+  "prd_id": "20260509-multi-ide-single-server",
+  "version": "1.1.0",
+  "description": "All IDEs connect to a single shared Python server. Isolation is via X-IDE-ORIGIN header + per-LLM memory scoping.",
+  "ide_configs": {
+    "vscode": {
+      "transport": "stdio",
+      "port": 8010,
+      "mode": "proxy",
+      "args": ["--ide", "vscode"],
+      "env": { "CCT_IDE": "vscode", "CCT_TRANSPORT": "stdio", "CCT_PORT": "8010" }
+    },
+    "cursor": {
+      "transport": "stdio",
+      "port": 8011,
+      "mode": "proxy",
+      "args": ["--ide", "cursor"],
+      "env": { "CCT_IDE": "cursor", "CCT_TRANSPORT": "stdio", "CCT_PORT": "8011" }
+    },
+    "jetbrains": {
+      "transport": "sse",
+      "port": 8001,
+      "mode": "direct",
+      "headers": { "X-IDE-ORIGIN": "jetbrains" }
+    },
+    "windsurf": {
+      "transport": "sse",
+      "port": 8001,
+      "mode": "direct",
+      "headers": { "X-IDE-ORIGIN": "windsurf" }
+    },
+    "github_copilot": {
+      "transport": "sse",
+      "port": 8001,
+      "mode": "direct",
+      "headers": { "X-IDE-ORIGIN": "github_copilot" }
+    }
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8001,
+    "transport": "sse"
+  }
+}

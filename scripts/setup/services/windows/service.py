@@ -16,9 +16,9 @@ Management CLI:
 from __future__ import annotations
 
 import sys
-import os
 import subprocess
 import argparse
+import time
 from pathlib import Path
 
 # Add project root to path
@@ -40,6 +40,25 @@ class WindowsServiceManager:
         self.project_root = Path(project_root) if project_root else PROJECT_ROOT
         self.service_script = self.project_root / "src" / "core" / "services" / "windows" / "background.py"
         self.python_exe = self._find_python()
+
+    def _run_sc(self, *args: str) -> subprocess.CompletedProcess:
+        """Run sc.exe command and capture output for diagnostics."""
+        return subprocess.run(
+            ["sc.exe", *args],
+            capture_output=True,
+            text=True
+        )
+
+    def _wait_for_state(self, expected_state: str, timeout_seconds: int = 30) -> bool:
+        """Poll service state until expected state or timeout."""
+        deadline = time.time() + timeout_seconds
+        expected_upper = expected_state.upper()
+        while time.time() < deadline:
+            query = self._run_sc("query", self.SERVICE_NAME)
+            if query.returncode == 0 and expected_upper in query.stdout.upper():
+                return True
+            time.sleep(1)
+        return False
     
     def _find_python(self) -> str:
         """Find Python executable, preferring venv."""
@@ -88,18 +107,15 @@ class WindowsServiceManager:
             
             # Configure service startup type (auto-start on boot)
             print("\n🔧 Configuring auto-startup on boot...")
-            subprocess.run([
-                "sc.exe", "config", self.SERVICE_NAME,
-                "start=", "auto"
-            ], capture_output=True, check=False)
+            self._run_sc("config", self.SERVICE_NAME, "start=", "auto")
             
             # Configure service recovery options (restart on failure)
             print("\n🔧 Configuring service recovery options...")
-            subprocess.run([
-                "sc.exe", "failure", self.SERVICE_NAME,
+            self._run_sc(
+                "failure", self.SERVICE_NAME,
                 "reset=", "86400",
                 "actions=", "restart/60000/restart/60000/restart/60000"
-            ], capture_output=True, check=False)
+            )
             
             print("\n✅ Service installed successfully")
             print(f"   Startup Type: Automatic (runs on Windows boot)")
@@ -114,23 +130,24 @@ class WindowsServiceManager:
     
     def start(self) -> bool:
         """Start the Windows Service."""
+        if not self.check_admin():
+            print("❌ ERROR: Administrator privileges required")
+            print("   Please run as Administrator")
+            return False
+        
         print(f"🚀 Starting {self.SERVICE_NAME} service...")
         
         try:
-            result = subprocess.run(
-                ["sc.exe", "start", self.SERVICE_NAME],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_sc("start", self.SERVICE_NAME)
             
             print(result.stdout)
-            if result.returncode == 0 or "START_PENDING" in result.stdout or "RUNNING" in result.stdout:
+            if result.returncode == 0 and self._wait_for_state("RUNNING", timeout_seconds=45):
                 print(f"\n✅ Service started")
                 print("   All AI agents can now connect to http://localhost:8001")
                 return True
-            else:
-                print(result.stderr)
-                return False
+            print(result.stderr)
+            print("❌ Service did not reach RUNNING state within timeout")
+            return False
                 
         except Exception as e:
             print(f"❌ Failed to start service: {e}")
@@ -138,22 +155,23 @@ class WindowsServiceManager:
     
     def stop(self) -> bool:
         """Stop the Windows Service."""
+        if not self.check_admin():
+            print("❌ ERROR: Administrator privileges required")
+            print("   Please run as Administrator")
+            return False
+        
         print(f"🛑 Stopping {self.SERVICE_NAME} service...")
         
         try:
-            result = subprocess.run(
-                ["sc.exe", "stop", self.SERVICE_NAME],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_sc("stop", self.SERVICE_NAME)
             
             print(result.stdout)
-            if result.returncode == 0 or "STOP_PENDING" in result.stdout or "STOPPED" in result.stdout:
-                print("\n✅ Service stopped")
+            if result.returncode == 0 and self._wait_for_state("STOPPED", timeout_seconds=45):
+                print(f"\n✅ Service stopped")
                 return True
-            else:
-                print(result.stderr)
-                return False
+            print(result.stderr)
+            print("❌ Service did not reach STOPPED state within timeout")
+            return False
                 
         except Exception as e:
             print(f"❌ Failed to stop service: {e}")
@@ -162,11 +180,7 @@ class WindowsServiceManager:
     def status(self) -> bool:
         """Check service status."""
         try:
-            result = subprocess.run(
-                ["sc.exe", "query", self.SERVICE_NAME],
-                capture_output=True,
-                text=True
-            )
+            result = self._run_sc("query", self.SERVICE_NAME)
             
             if result.returncode == 0:
                 print(f"\n📊 {self.SERVICE_NAME} Status:")
@@ -184,6 +198,7 @@ class WindowsServiceManager:
         """Remove the Windows Service."""
         if not self.check_admin():
             print("❌ ERROR: Administrator privileges required")
+            print("   Please run as Administrator")
             return False
         
         print(f"🗑️  Removing {self.SERVICE_NAME} service...")
@@ -214,8 +229,8 @@ class WindowsServiceManager:
     def restart(self) -> bool:
         """Restart the Windows Service."""
         print(f"🔄 Restarting {self.SERVICE_NAME} service...")
-        self.stop()
-        import time
+        if not self.stop():
+            return False
         time.sleep(2)
         return self.start()
 

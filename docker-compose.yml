@@ -1,0 +1,30 @@
+services:
+  cct-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cct-mcp-server
+    ports:
+      - "8010:8010"
+    environment:
+      CCT_HOST: 0.0.0.0
+      CCT_PORT: 8010
+      CCT_TRANSPORT: sse
+      CCT_MAX_SESSIONS: 128
+      CCT_LOG_LEVEL: INFO
+      CCT_DB_PATH: /app/database/cct_memory.db
+      CCT_PRICING_PATH: /app/database/datasets
+      CCT_BOOTSTRAP_API_KEY: ${CCT_BOOTSTRAP_API_KEY:-local-docker-key}
+    volumes:
+      - ./database:/app/database
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import os,sys,urllib.request; port=os.getenv('CCT_PORT','8010'); url=f'http://127.0.0.1:{port}/health'; r=urllib.request.urlopen(url, timeout=5); sys.exit(0 if r.status==200 else 1)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s

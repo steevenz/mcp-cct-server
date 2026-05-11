@@ -42,9 +42,7 @@ class MemoryManager:
     - A threading.Lock serializes all write operations to prevent 'database is locked' errors
       under FastMCP's concurrent async tool handler execution.
     """
-    def __init__(self, db_path: str = DEFAULT_DB_PATH):
-        # [SECURITY C2] Harden db_path to prevent path traversal attacks.
-        # Resolve the absolute path and ensure it stays within the project working directory.
+    def __init__(self, db_path: str = DEFAULT_DB_PATH, llm_instance_id: Optional[str] = None):
         resolved = os.path.abspath(db_path)
         project_root = os.path.abspath(os.getcwd())
         if not resolved.startswith(project_root):
@@ -53,27 +51,36 @@ class MemoryManager:
                 "Path traversal attack detected and blocked."
             )
         self.db_path = resolved
-        # Serializes concurrent writes from async MCP tool handlers
-        self._write_lock = threading.Lock()
+        self._write_lock = threading.RLock()
+        # LLM instance isolation: each LLM/IDE gets scoped queries
+        self.llm_instance_id = llm_instance_id or "default"
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Creates a localized connection to ensure thread safety across async requests."""
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        # Enable WAL mode for concurrent reads without full table locking
-        conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
     def _init_db(self):
         """Bootstraps the database tables and indexes if they do not exist."""
         with self._get_connection() as conn:
-            # Create tables
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA temp_store=MEMORY")
+
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     data JSON NOT NULL
                 )
             ''')
+            # Migration: add llm_instance_id column if missing (multi-LLM isolation)
+            try:
+                conn.execute("ALTER TABLE sessions ADD COLUMN llm_instance_id TEXT DEFAULT 'default'")
+            except sqlite3.OperationalError:
+                pass  # column already exists
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sessions_llm ON sessions(llm_instance_id)")
+
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS thoughts (
                     thought_id TEXT PRIMARY KEY,
@@ -117,6 +124,58 @@ class MemoryManager:
                 CREATE INDEX IF NOT EXISTS idx_anti_patterns_category ON anti_patterns(category)
             ''')
 
+            # Migration: user feedback table (symbiotic learning)
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS user_feedback (
+                    feedback_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    thought_id TEXT,
+                    rating INTEGER CHECK(rating >= 1 AND rating <= 5),
+                    feedback_type TEXT NOT NULL,
+                    comment TEXT,
+                    llm_tier TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+                )
+            ''')
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_feedback_session ON user_feedback(session_id)
+            ''')
+
+            # Migration: behavior patterns table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS behavior_patterns (
+                    pattern_id TEXT PRIMARY KEY,
+                    pattern_type TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    data JSON NOT NULL,
+                    confidence REAL DEFAULT 0.5,
+                    observation_count INTEGER DEFAULT 1,
+                    first_observed TEXT,
+                    last_observed TEXT NOT NULL
+                )
+            ''')
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_patterns_user ON behavior_patterns(user_id)
+            ''')
+
+            # Migration: offline analysis cache
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS offline_analysis_cache (
+                    cache_id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL,
+                    analysis_type TEXT NOT NULL,
+                    result JSON NOT NULL,
+                    llm_tier TEXT NOT NULL,
+                    confidence REAL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(source_id, analysis_type)
+                )
+            ''')
+            conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_cache_source ON offline_analysis_cache(source_id)
+            ''')
+
             conn.commit()
             logger.info(f"SQLite Memory mapped to: {self.db_path}")
 
@@ -127,14 +186,13 @@ class MemoryManager:
         estimated_thoughts: int = 5,
         model_id: Optional[str] = None,
         suggested_pipeline: Optional[List[ThinkingStrategy]] = None,
-        complexity: str = "unknown"
+        complexity: str = "unknown",
+        llm_instance_id: Optional[str] = None,
     ) -> CCTSessionState:
         session_id = f"session_{uuid.uuid4().hex[:8]}"
-        
-        # [SECURITY H2] Generate a cryptographically random bearer token for this session.
-        # The caller must store this token — it is required to access session history.
         session_token = secrets.token_urlsafe(32)
-        
+        llm_id = llm_instance_id or self.llm_instance_id
+
         session = CCTSessionState(
             session_id=session_id,
             problem_statement=problem_statement,
@@ -146,17 +204,16 @@ class MemoryManager:
             suggested_pipeline=suggested_pipeline or [],
             complexity=complexity
         )
-        
+
         with self._write_lock:
             with self._get_connection() as conn:
                 conn.execute(
-                    "INSERT INTO sessions (session_id, data) VALUES (?, ?)",
-                    (session_id, session.model_dump_json())
+                    "INSERT INTO sessions (session_id, data, llm_instance_id) VALUES (?, ?, ?)",
+                    (session_id, session.model_dump_json(), llm_id)
                 )
-        
-        # [M2] Audit log: session creation
-        _audit_log("SESSION_CREATE", session_id, f"profile={profile.value}")
-        logger.info(f"Session {session_id} created for profile: {profile.value}")
+
+        _audit_log("SESSION_CREATE", session_id, f"profile={profile.value} llm={llm_id}")
+        logger.info(f"Session {session_id} created for profile: {profile.value} llm={llm_id}")
         return session
 
     def get_session(self, session_id: str) -> Optional[CCTSessionState]:
@@ -253,27 +310,36 @@ class MemoryManager:
                 return EnhancedThought.model_validate_json(row[0])
         return None
         
-    def list_sessions(self) -> List[str]:
+    def list_sessions(self, llm_instance_id: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[str]:
+        llm_id = llm_instance_id or self.llm_instance_id
         with self._get_connection() as conn:
-            cursor = conn.execute("SELECT session_id FROM sessions")
+            cursor = conn.execute(
+                "SELECT session_id FROM sessions WHERE llm_instance_id = ? ORDER BY rowid DESC LIMIT ? OFFSET ?",
+                (llm_id, min(limit, 500), offset)
+            )
             return [row[0] for row in cursor.fetchall()]
 
-    def get_session_history(self, session_id: str) -> List[EnhancedThought]:
+    def get_session_history(self, session_id: str, limit: int = 200) -> List[EnhancedThought]:
         session = self.get_session(session_id)
         if not session:
             return []
-            
+
         with self._get_connection() as conn:
-            cursor = conn.execute("SELECT data FROM thoughts WHERE session_id = ?", (session_id,))
+            cursor = conn.execute(
+                "SELECT data FROM thoughts WHERE session_id = ? ORDER BY rowid DESC LIMIT ?",
+                (session_id, min(limit, 1000))
+            )
             thoughts_dict = {}
             for row in cursor.fetchall():
                 thought = EnhancedThought.model_validate_json(row[0])
                 thoughts_dict[thought.id] = thought
-                
+
         history_set = set(session.history_ids)
         ordered: List[EnhancedThought] = []
 
         for tid in session.history_ids:
+            if len(ordered) >= limit:
+                break
             thought = thoughts_dict.get(tid)
             if thought:
                 ordered.append(thought)
@@ -447,24 +513,23 @@ class MemoryManager:
             logger.info(f"Session {session_id} and its history purged.")
         return success
 
-    def get_aggregate_usage(self) -> Dict[str, Any]:
-        """
-        Calculates global token and cost usage across all sessions in the database.
-        Returns a dictionary with sum of prompt_tokens, completion_tokens, and costs.
-        """
+    def get_aggregate_usage(self, llm_instance_id: Optional[str] = None) -> Dict[str, Any]:
+        llm_id = llm_instance_id or self.llm_instance_id
         totals = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_tokens": 0,
             "cost_usd": 0.0,
             "cost_idr": 0.0,
-            "session_count": 0
+            "session_count": 0,
+            "llm_instance_id": llm_id,
         }
-        
+
         with self._get_connection() as conn:
-            cursor = conn.execute("SELECT data FROM sessions")
+            cursor = conn.execute(
+                "SELECT data FROM sessions WHERE llm_instance_id = ?", (llm_id,)
+            )
             rows = cursor.fetchall()
-            
             totals["session_count"] = len(rows)
             for row in rows:
                 try:
@@ -475,12 +540,11 @@ class MemoryManager:
                     totals["cost_idr"] += data.get("total_cost_idr", 0.0)
                 except (json.JSONDecodeError, KeyError, TypeError):
                     continue
-            
+
             totals["total_tokens"] = totals["prompt_tokens"] + totals["completion_tokens"]
-            # Round financial totals
             totals["cost_usd"] = round(totals["cost_usd"], 8)
             totals["cost_idr"] = round(totals["cost_idr"], 2)
-            
+
         return totals
 
     # =========================================================================
@@ -678,7 +742,7 @@ class MemoryManager:
                         if not thought or not thought.children_ids:
                             return thought_id
                         # Return the last child (most recent)
-                        return get_latest_in_branch(thought.thought.children_ids[-1]) if thought.children_ids else thought_id
+                        return get_latest_in_branch(thought.children_ids[-1]) if thought.children_ids else thought_id
                     
                     # Mark this thought as promoted
                     branch.tags.append("promoted_to_mainline")
@@ -699,3 +763,48 @@ class MemoryManager:
             "new_current_thought": branch_root_id,
             "promotion_message": f"Branch {branch_root_id} is now the mainline path"
         }
+
+    # =========================================================================
+    # CONSOLIDATION HELPERS (used by ConsolidationEngine for neural replay)
+    # =========================================================================
+
+    def _save_raw_pattern(self, pattern_id: str, data: dict) -> None:
+        """Save/update a raw pattern dict. ConsolidationEngine bypasses domain model."""
+        with self._write_lock:
+            with self._get_connection() as conn:
+                existing = conn.execute(
+                    "SELECT 1 FROM thinking_patterns WHERE tp_id = ?", (pattern_id,)
+                ).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE thinking_patterns SET data = ?, usage_count = ? WHERE tp_id = ?",
+                        (json.dumps(data), data.get("usage_count", 1), pattern_id),
+                    )
+                else:
+                    thought_id = data.get("thought_id", "")
+                    conn.execute(
+                        "INSERT INTO thinking_patterns (tp_id, thought_id, usage_count, data) VALUES (?, ?, ?, ?)",
+                        (pattern_id, thought_id, data.get("usage_count", 1), json.dumps(data)),
+                    )
+
+    def _delete_pattern(self, pattern_id: str) -> None:
+        """Remove a thinking pattern (consolidation pruning)."""
+        with self._write_lock:
+            with self._get_connection() as conn:
+                conn.execute("DELETE FROM thinking_patterns WHERE tp_id = ?", (pattern_id,))
+
+    def _delete_anti_pattern(self, anti_pattern_id: str) -> None:
+        """Remove an anti-pattern (consolidation pruning)."""
+        with self._write_lock:
+            with self._get_connection() as conn:
+                conn.execute("DELETE FROM anti_patterns WHERE failure_id = ?", (anti_pattern_id,))
+
+    def get_thinking_pattern_by_id(self, pattern_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single thinking pattern by ID as raw dict."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT data FROM thinking_patterns WHERE tp_id = ?", (pattern_id,)
+            ).fetchone()
+            if row:
+                return json.loads(row[0])
+        return None

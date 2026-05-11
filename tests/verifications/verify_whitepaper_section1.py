@@ -96,8 +96,9 @@ class TestStrategicHumanAssistance:
     def test_learned_identity_dataclass(self):
         """Verify LearnedIdentity dataclass exists"""
         assert LearnedIdentity is not None
-        assert hasattr(LearnedIdentity, 'learned_preferences')
-        assert hasattr(LearnedIdentity, 'interaction_count')
+        learned = LearnedIdentity()
+        assert hasattr(learned, 'learned_preferences')
+        assert hasattr(learned, 'interaction_count')
 
 
 class TestIdentityLayerDigitalSymbiosis:

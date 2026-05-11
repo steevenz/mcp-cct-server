@@ -17,6 +17,8 @@ class ThoughtMetrics(BaseModel):
     logical_coherence: float = Field(default=0.0, ge=0.0, le=1.0)
     evidence_strength: float = Field(default=0.0, ge=0.0, le=1.0)
     novelty_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Estimated confidence in the reasoning step")
+    contradiction_flags: List[str] = Field(default_factory=list, description="List of detected logical contradictions")
     confidence_level: ConfidenceLevel = Field(default=ConfidenceLevel.MEDIUM)
     
     # Token & Cost Metrics (Transparency Layer)
@@ -36,6 +38,7 @@ class ThoughtMetrics(BaseModel):
 class EnhancedThought(BaseModel):
     """Main thought entity structure within the system (Universal Currency)."""
     id: str = Field(description="Unique identifier for the thought")
+    reasoning_trace_id: Optional[str] = Field(None, description="Global trace identifier for the reasoning chain (0x9)")
     content: str = Field(description="The actual content of the thought")
     summary: Optional[str] = Field(None, description="Condensed version of the thought for long-context compression")
     thought_type: ThoughtType
@@ -80,7 +83,7 @@ class CCTSessionState(BaseModel):
     status: SessionStatus = Field(default=SessionStatus.ACTIVE)
     suggested_pipeline: List[ThinkingStrategy] = Field(default_factory=list)
     knowledge_injection: Dict[str, Any] = Field(default_factory=dict)
-    identity_layer: Dict[str, str] = Field(default_factory=dict)
+    identity_layer: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     
     # HITL Fields

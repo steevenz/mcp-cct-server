@@ -1,0 +1,35 @@
+{
+  "prd_id": "20260509-multi-ide-single-server",
+  "version": "1.1.0",
+  "description": "Single server, multiple IDE/LLM isolation via X-IDE-ORIGIN header. All connect to port 8001.",
+  "mcpServers": {
+    "Creative Critical Thinking": {
+      "url": "http://localhost:8001/cognitive-api/v1/sync",
+      "headers": {
+        "X-API-KEY": "cct-secret-token-2026",
+        "X-IDE-ORIGIN": "jetbrains"
+      }
+    },
+    "CCT Copilot": {
+      "url": "http://localhost:8001/cognitive-api/v1/sync",
+      "headers": {
+        "X-API-KEY": "cct-secret-token-2026",
+        "X-IDE-ORIGIN": "github_copilot"
+      }
+    },
+    "CCT Windsurf": {
+      "url": "http://localhost:8001/cognitive-api/v1/sync",
+      "headers": {
+        "X-API-KEY": "cct-secret-token-2026",
+        "X-IDE-ORIGIN": "windsurf"
+      }
+    },
+    "CCT Cursor": {
+      "url": "http://localhost:8001/cognitive-api/v1/sync",
+      "headers": {
+        "X-API-KEY": "cct-secret-token-2026",
+        "X-IDE-ORIGIN": "cursor"
+      }
+    }
+  }
+}

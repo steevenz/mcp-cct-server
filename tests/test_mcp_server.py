@@ -15,7 +15,6 @@ from src.engines.memory.manager import MemoryManager
 from src.engines.sequential.engine import SequentialEngine
 from src.core.services.analysis.scoring import ScoringService
 from src.engines.fusion.orchestrator import FusionOrchestrator
-from src.core.services.routing import IntelligenceRouter
 from src.modes.registry import CognitiveEngineRegistry
 from src.engines.orchestrator import CognitiveOrchestrator
 from src.tools.simplified import register_simplified_tools
@@ -25,7 +24,7 @@ class MockFastMCP:
     def __init__(self, name):
         self.name = name
         self.tools = {}
-        
+
     def tool(self):
         def decorator(func):
             self.tools[func.__name__] = func
@@ -37,7 +36,7 @@ async def run_server_smoke():
     print("=" * 60)
     print("CCT MCP Server Test - Windsurf Compatibility")
     print("=" * 60)
-    
+
     # 1. Load settings
     try:
         settings = load_settings()
@@ -45,7 +44,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to load settings: {e}")
         return False
-    
+
     # 2. Initialize core engines
     try:
         memory_manager = MemoryManager()
@@ -55,7 +54,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to initialize engines: {e}")
         return False
-    
+
     # 3. Initialize fusion services
     try:
         fusion_orchestrator = FusionOrchestrator(
@@ -68,7 +67,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to initialize fusion services: {e}")
         return False
-    
+
     # 4. Initialize engine registry
     try:
         engine_registry = CognitiveEngineRegistry(
@@ -80,7 +79,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to initialize registry: {e}")
         return False
-    
+
     # 5. Initialize master orchestrator
     try:
         master_orchestrator = CognitiveOrchestrator(
@@ -94,7 +93,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to initialize orchestrator: {e}")
         return False
-    
+
     # 6. Test tool registration
     try:
         mock_mcp = MockFastMCP("test-server")
@@ -107,7 +106,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ Failed to register tools: {e}")
         return False
-    
+
     # 7. Test session_start
     try:
         session_start = mock_mcp.tools.get('session_start')
@@ -125,7 +124,7 @@ async def run_server_smoke():
     except Exception as e:
         print(f"❌ session_start failed: {e}")
         return False
-    
+
     # 8. Test session_think (if session created)
     if session_id:
         try:
@@ -144,7 +143,7 @@ async def run_server_smoke():
                 print("❌ session_think not found")
         except Exception as e:
             print(f"❌ session_think failed: {e}")
-    
+
     # 9. Test session_list
     try:
         session_list = mock_mcp.tools.get('session_list')
@@ -155,11 +154,78 @@ async def run_server_smoke():
             print("❌ session_list not found")
     except Exception as e:
         print(f"❌ session_list failed: {e}")
-    
+
     print("=" * 60)
     print("MCP Server Test Complete - Ready for Windsurf!")
     print("=" * 60)
     return True
+
+
+def test_mcp_http_tools_call_returns_flat_wirecontent(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCT_BOOTSTRAP_API_KEY", "test-bootstrap-key")
+    monkeypatch.setenv("CCT_SERVER_NAME", "test-cct-mcp-server")
+    monkeypatch.setenv("CCT_TRANSPORT", "sse")
+    monkeypatch.setenv("CCT_HOST", "127.0.0.1")
+    monkeypatch.setenv("CCT_PORT", "8019")
+    monkeypatch.setenv("CCT_DB_PATH", str(tmp_path / "cct_test.db"))
+    monkeypatch.setenv("CCT_IDENTITY_PATH", str(tmp_path / "identity"))
+    monkeypatch.setenv("CCT_LLM_PROVIDER", "")
+
+    import importlib
+
+    if "src.main" in sys.modules:
+        del sys.modules["src.main"]
+
+    module = importlib.import_module("src.main")
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(module.app)
+    headers = {"X-API-KEY": "test-bootstrap-key"}
+
+    init_response = client.post(
+        "/cognitive-api/v1/sync",
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2024-11-05"},
+        },
+    )
+    assert init_response.status_code == 200
+    init_payload = init_response.json()
+    assert init_payload["result"]["protocolVersion"] == "2024-11-05"
+
+    call_response = client.post(
+        "/cognitive-api/v1/sync",
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "recall_thinking", "arguments": {"include_patterns": False, "include_sessions": True}},
+        },
+    )
+    assert call_response.status_code == 200
+    payload = call_response.json()
+
+    assert payload["jsonrpc"] == "2.0"
+    assert payload["id"] == 2
+    assert "result" in payload
+    assert isinstance(payload["result"]["content"], list)
+    assert isinstance(payload["result"]["isError"], bool)
+
+    for item in payload["result"]["content"]:
+        assert isinstance(item, dict)
+        assert isinstance(item.get("type"), str)
+        assert item["type"].strip()
+        if item["type"] == "text":
+            assert isinstance(item.get("text"), str)
+
+    if "src.main" in sys.modules:
+        del sys.modules["src.main"]
+
 
 if __name__ == "__main__":
     success = asyncio.run(run_server_smoke())

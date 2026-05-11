@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 # Add project root and scripts/server to path
-PROJECT_ROOT = Path(__file__).parent.parent
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -122,23 +122,26 @@ class CCTServerManager:
         print("🛑 Stopping CCT Server...")
         
         try:
-            # Find and kill process on port
+            # Find and kill LISTENING process(es) bound to the configured port.
+            command = (
+                f'Get-NetTCPConnection -LocalPort {self.port} -State Listen '
+                '| Select-Object -ExpandProperty OwningProcess -Unique'
+            )
             result = subprocess.run(
-                ["netstat", "-ano", "|", "findstr", f":{self.port}"],
+                ["powershell", "-NoProfile", "-Command", command],
                 capture_output=True,
                 text=True,
-                shell=True
+                shell=False
             )
             
             if result.returncode == 0 and result.stdout:
-                lines = result.stdout.strip().split("\n")
+                lines = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
                 killed_count = 0
                 for line in lines:
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        pid = parts[-1]
+                    pid = line
+                    if pid.isdigit():
                         print(f"   Found process PID: {pid}")
-                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True)
+                        subprocess.run(["taskkill", "/F", "/PID", pid], capture_output=True, text=True)
                         print(f"   ✅ Stopped process {pid}")
                         killed_count += 1
                 
@@ -176,9 +179,9 @@ class CCTServerManager:
         print(f"📋 Viewing last {tail} lines from {log_path}\n")
         
         try:
+            command = f"Get-Content -Tail {tail} -Wait '{log_path}'"
             result = subprocess.run(
-                ["powershell", "Get-Content", "-Tail", str(tail), "-Wait", str(log_path)],
-                # For Windows PowerShell
+                ["powershell", "-NoProfile", "-Command", command],
             )
             return result.returncode
         except KeyboardInterrupt:

@@ -14,7 +14,7 @@ Features:
 import logging
 import hashlib
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 import httpx
 from src.core.config import Settings
@@ -39,7 +39,8 @@ class CriticService:
         self.settings = settings
         self.identity = identity_service
         self.timeout = httpx.Timeout(60.0, connect=10.0)
-        self._cache: Dict[str, ReviewOutcome] = {}
+        self._http_client = httpx.AsyncClient(timeout=self.timeout)
+        self._cache: Dict[str, Tuple[ReviewOutcome, float]] = {}
         self._cache_ttl_seconds = 3600  # 1 hour cache
         
         # Critic configuration from environment
@@ -59,21 +60,27 @@ class CriticService:
     def _get_cache_key(self, prompt: str, system_prompt: Optional[str], persona: str) -> str:
         """Generate cache key for critic requests."""
         content = f"{prompt}:{system_prompt}:{persona}"
-        return hashlib.md5(content.encode()).hexdigest()
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
     
     def _get_cached(self, cache_key: str) -> Optional[ReviewOutcome]:
         """Retrieve cached review if valid."""
         if cache_key not in self._cache:
             return None
-        
-        cached = self._cache[cache_key]
-        # Check if cache is still valid (simplified - in production use proper TTL)
+
+        cached, cached_at = self._cache[cache_key]
+        if (time.time() - cached_at) > self._cache_ttl_seconds:
+            self._cache.pop(cache_key, None)
+            return None
         return cached
     
     def _cache_response(self, cache_key: str, review: ReviewOutcome) -> None:
         """Cache review outcome."""
-        self._cache[cache_key] = review
+        self._cache[cache_key] = (review, time.time())
         logger.debug(f"[REVIEW] Cached review for key: {cache_key[:8]}...")
+
+    async def aclose(self) -> None:
+        """Close pooled HTTP client resources."""
+        await self._http_client.aclose()
     
     async def review(
         self, 
@@ -85,7 +92,7 @@ class CriticService:
         """
         Execute cross-model adversarial review with fallback chain.
         
-        Chain: External Review → Primary LLM → Internal Persona (simulated)
+        Chain: External Review → Primary LLM → Internal Persona (synthetic)
         
         DIGITAL TWIN: The external LLM (critic) receives the human master's identity prompts
         to behave as the human master, ensuring consistency with the Digital Twin paradigm.
@@ -177,10 +184,10 @@ class CriticService:
                 return review
                 
             except Exception as e:
-                logger.warning(f"[REVIEW] Primary thought service failed: {e}. Falling back to persona simulation.")
+                logger.warning(f"[REVIEW] Primary thought service failed: {e}. Falling back to persona-based review.")
         
-        # TIER 3: Fallback to internal persona simulation (synthetic review)
-        logger.info("[REVIEW] Using persona simulation fallback")
+        # TIER 3: Fallback to internal persona-based review (synthetic)
+        logger.info("[REVIEW] Using persona-based fallback")
         synthetic_response = self._generate_synthetic_review(target_content, persona)
         latency = (time.time() - start_time) * 1000
         
@@ -222,11 +229,10 @@ class CriticService:
             "temperature": 0.2
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        resp = await self._http_client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
     
     async def _call_anthropic_review(self, prompt: str, system_prompt: str) -> str:
         """Call Anthropic review API."""
@@ -245,11 +251,10 @@ class CriticService:
         if system_prompt:
             payload["system"] = system_prompt
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["content"][0]["text"]
+        resp = await self._http_client.post(url, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["content"][0]["text"]
     
     async def _call_ollama_review(self, prompt: str, system_prompt: str) -> str:
         """Call Ollama review API."""
@@ -262,11 +267,10 @@ class CriticService:
             "stream": False
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["response"]
+        resp = await self._http_client.post(url, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["response"]
     
     async def _call_custom_review(self, prompt: str, system_prompt: str) -> str:
         """Call custom review endpoint."""
@@ -286,11 +290,10 @@ class CriticService:
             "temperature": 0.2
         }
         
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.post(self.critic_api_url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        resp = await self._http_client.post(self.critic_api_url, headers=headers, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
     
     def _generate_synthetic_review(self, target_content: str, persona: str) -> str:
         """

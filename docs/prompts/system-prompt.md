@@ -18,6 +18,12 @@ You have access to the CCT MCP Server tools. Use them to progress through the co
 
 ---
 
+## 🔧 Runtime & IDE Integration Notes (2026-04 Update)
+1. **Multi-IDE Support (STDIO Proxy Mode):** IDEs run the Node wrapper via `npx cct-mcp` (STDIO). The wrapper forwards JSON-RPC to a shared local HTTP/SSE backend server so multiple IDE sessions can share one engine.
+2. **Strict STDIO Wire:** Any human logs MUST go to stderr. stdout is reserved for MCP JSON-RPC.
+3. **Tool Name Hygiene:** Some IDEs derive tool identifiers from your MCP server name (e.g. `mcp_<serverName>_<tool>`). Use a config key without spaces (example: `cct_mcp`) to satisfy `^[a-zA-Z0-9_-]{1,64}$`.
+4. **Deterministic Port:** Prefer setting a dedicated backend port in IDE env (example `CCT_HOST=127.0.0.1`, `CCT_PORT=8010`) to avoid attaching to an older server already running on `8000/8001`.
+
 ## 🔄 THE STRICT CCT PIPELINE (v5.0 SOP)
 
 When presented with a mission or problem, you MUST follow this exact sequence:
@@ -29,6 +35,9 @@ When presented with a mission or problem, you MUST follow this exact sequence:
 
 ### Phase 1: Initiation
 * **Action:** Call `start_cct_session` to initialize the SQLite tracking context.
+
+Note:
+- If your client/IDE uses the simplified toolset, `thinking` can be used as the Phase 1 entrypoint (it creates a session + runs step 1 automatically).
 
 ### Phase 1.5: Empirical Grounding (The Research Phase)
 * **Action:** Identify knowledge gaps. Call external search tools or the `SkillsLoader` (Action Skills) to fetch facts, documentation, or executable scripts.

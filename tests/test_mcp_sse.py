@@ -16,9 +16,8 @@ async def test_cct_sse():
             tools = await session.list_tools()
             print(f"Available tools: {[t.name for t in tools.tools]}")
             
-            # Call 'thinking' tool
-            print("Calling 'thinking' tool...")
-            result = await session.call_tool("thinking", {
+            print("Calling 'start_thinking' tool...")
+            result = await session.call_tool("start_thinking", {
                 "problem_statement": "Bagaimana cara membuat sistem transportasi yang efisien di Jakarta?",
                 "profile": "creative"
             })
@@ -33,18 +32,16 @@ async def test_cct_sse():
                     print(f"Session created: {session_id}")
                     
                     if session_id:
-                        # Call 'rethinking' tool
-                        print(f"Calling 'rethinking' tool for session {session_id}...")
-                        rethinking_result = await session.call_tool("rethinking", {
+                        print(f"Calling 'continue_thinking' tool for session {session_id}...")
+                        rethinking_result = await session.call_tool("continue_thinking", {
                             "session_id": session_id,
                             "thought_content": "Mari kita pertimbangkan opsi transportasi berbasis air (sungai).",
                             "thought_number": 2
                         })
                         print(f"Rethinking result: {rethinking_result}")
                         
-                        # Call 'list_thinking' tool
-                        print("Calling 'list_thinking' tool...")
-                        list_result = await session.call_tool("list_thinking", {})
+                        print("Calling 'recall_thinking' tool...")
+                        list_result = await session.call_tool("recall_thinking", {"include_patterns": False, "include_sessions": True})
                         print(f"List sessions result: {list_result}")
                 except Exception as e:
                     print(f"Error parsing result: {e}")
