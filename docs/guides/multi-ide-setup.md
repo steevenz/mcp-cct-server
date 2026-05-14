@@ -192,7 +192,50 @@ This creates a completely separate server with its own connection registry and m
 
 ---
 
-## 8. Troubleshooting
+---
+
+## 9. Remote Deployment (DigitalOcean)
+
+For deploying to a remote server with public HTTPS access:
+
+### 9.1 Server Setup
+
+1. Copy the project to your Droplet.
+2. Run the deployment script:
+   ```bash
+   chmod +x scripts/setup/remote/deploy_do.sh
+   ./scripts/setup/remote/deploy_do.sh your-domain.com
+   ```
+3. Follow the prompts for SSL (Certbot).
+4. Note the generated `CCT_BOOTSTRAP_API_KEY` in your `.env`.
+
+### 9.2 Local Connection (Handshake)
+
+Once the server is live at `https://your-domain.com`, you have two ways to connect:
+
+#### A. CLI Handshake (Recommended)
+Run this on your local machine:
+```bash
+python scripts/setup/local/connect_mcp.py
+```
+It will ask for your Server URL and Bootstrap Key, then output the exact `gemini mcp add` command.
+
+#### B. Browser Portal
+Visit `https://your-domain.com/handshake` in your browser. Enter your Bootstrap Key to generate credentials and copy-paste them into your IDE.
+
+---
+
+## 10. Gemini CLI Integration
+
+To add the CCT server to your Gemini CLI with the shorthand URL:
+
+```bash
+gemini mcp add --transport sse creative-critical-thinking https://your-domain.com/cct --header "X-API-KEY: YOUR_ISSUED_KEY" --header "X-IDE-ORIGIN: gemini-cli"
+```
+
+---
+
+## 11. Troubleshooting Remote Connections
 
 ### 8.1 "Port already in use"
 

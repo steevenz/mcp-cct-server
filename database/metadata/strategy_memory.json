@@ -5,5 +5,33 @@
     "attempts": 1,
     "successes": 1,
     "last_used": "2026-05-09T12:02:03.310764+00:00"
+  },
+  "testing:empirical_research": {
+    "domain": "testing",
+    "strategy": "empirical_research",
+    "attempts": 1,
+    "successes": 1,
+    "last_used": "2026-05-12T05:35:44.650098+00:00"
+  },
+  "general:empirical_research": {
+    "domain": "general",
+    "strategy": "empirical_research",
+    "attempts": 1,
+    "successes": 1,
+    "last_used": "2026-05-12T09:59:20.835687+00:00"
+  },
+  "general:first_principles": {
+    "domain": "general",
+    "strategy": "first_principles",
+    "attempts": 1,
+    "successes": 1,
+    "last_used": "2026-05-12T09:59:33.891037+00:00"
+  },
+  "general:actor_critic_loop": {
+    "domain": "general",
+    "strategy": "actor_critic_loop",
+    "attempts": 1,
+    "successes": 0,
+    "last_used": "2026-05-12T09:59:40.547171+00:00"
   }
 }

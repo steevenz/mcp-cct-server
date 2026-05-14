@@ -164,14 +164,24 @@ function isNearExpiry(isoTimestamp, windowMs = 86400000) {
 
 function persistClientKey(apiKey, expiresAt, instanceId) {
   if (!apiKey) return;
-  upsertDotenvValues({ CCT_CLIENT_API_KEY: apiKey, CCT_CLIENT_KEY_EXPIRES_AT: expiresAt || "", CCT_CLIENT_INSTANCE_ID: instanceId || "" });
-  process.env.CCT_CLIENT_API_KEY = apiKey;
-  if (expiresAt) process.env.CCT_CLIENT_KEY_EXPIRES_AT = expiresAt;
-  if (instanceId) process.env.CCT_CLIENT_INSTANCE_ID = instanceId;
+  try {
+    upsertDotenvValues({
+      CCT_CLIENT_API_KEY: apiKey,
+      CCT_CLIENT_KEY_EXPIRES_AT: expiresAt || "",
+      CCT_CLIENT_INSTANCE_ID: instanceId || ""
+    });
+    process.env.CCT_CLIENT_API_KEY = apiKey;
+    if (expiresAt) process.env.CCT_CLIENT_KEY_EXPIRES_AT = expiresAt;
+    if (instanceId) process.env.CCT_CLIENT_INSTANCE_ID = instanceId;
+    logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Persisted issued client key (Expires: ${expiresAt || "N/A"})`);
+  } catch (err) {
+    logStderr(`[${WRAPPER_NAME}][${PRD_ID}] WARNING: Failed to persist client key to .env: ${err.message}`);
+  }
 }
 
 function upsertDotenvValues(updates) {
   const envPath = path.join(PROJECT_ROOT, ".env");
+  const tmpPath = `${envPath}.tmp`;
   const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
   const lines = existing ? existing.split(/\r?\n/) : [];
   const remaining = new Map(Object.entries(updates).filter(([_, v]) => typeof v === "string" && v.length > 0));
@@ -188,7 +198,9 @@ function upsertDotenvValues(updates) {
     return `${name}=${value}`;
   });
   for (const [name, value] of remaining.entries()) updatedLines.push(`${name}=${value}`);
-  fs.writeFileSync(envPath, updatedLines.join("\n").replace(/\n*$/, "\n"), "utf-8");
+  // Atomic-like write via rename
+  fs.writeFileSync(tmpPath, updatedLines.join("\n").replace(/\n*$/, "\n"), "utf-8");
+  fs.renameSync(tmpPath, envPath);
 }
 
 function buildApiKeyHeader(apiKey) { return { "X-API-KEY": apiKey }; }
@@ -249,35 +261,66 @@ async function issueClientKeyViaHandshake(baseUrl) {
 
 async function rotateClientKey(baseUrl, currentApiKey) {
   if (!currentApiKey) return null;
-  const resp = await fetchJson(`${baseUrl}/cognitive-api/v1/auth/keys/rotate`, {
-    method: "POST",
-    headers: { ...buildApiKeyHeader(currentApiKey), "content-type": "application/json" },
-    body: JSON.stringify({}),
-  }, 8000);
-  const rotated = resp?.json?.data || {};
-  const apiKey = String(rotated.api_key || "").trim();
-  const expiresAt = String(rotated.expires_at || "").trim();
-  if (!resp.ok || !apiKey) return null;
-  authConfig.clientKey = apiKey;
-  authConfig.clientKeyExpiresAt = expiresAt;
-  persistClientKey(apiKey, expiresAt, authConfig.clientInstanceId);
-  return apiKey;
+  try {
+    const resp = await fetchJson(`${baseUrl}/cognitive-api/v1/auth/keys/rotate`, {
+      method: "POST",
+      headers: { ...buildApiKeyHeader(currentApiKey), "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }, 8000);
+    const rotated = resp?.json?.data || {};
+    const apiKey = String(rotated.api_key || "").trim();
+    const expiresAt = String(rotated.expires_at || "").trim();
+    if (!resp.ok || !apiKey) {
+      logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Key rotation failed: ${resp.status} ${resp.text}`);
+      return null;
+    }
+    authConfig.clientKey = apiKey;
+    authConfig.clientKeyExpiresAt = expiresAt;
+    persistClientKey(apiKey, expiresAt, authConfig.clientInstanceId);
+    return apiKey;
+  } catch (err) {
+    logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Key rotation error: ${err.message}`);
+    return null;
+  }
+}
+
+let rotationTimer = null;
+function scheduleAutomaticRotation(baseUrl) {
+  if (rotationTimer) clearInterval(rotationTimer);
+  // Check every 30 minutes
+  rotationTimer = setInterval(async () => {
+    if (isNearExpiry(authConfig.clientKeyExpiresAt, 12 * 3600000)) { // Rotate 12h before expiry
+      logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Triggering proactive key rotation...`);
+      await rotateClientKey(baseUrl, authConfig.clientKey);
+    }
+  }, 1800000).unref();
 }
 
 async function establishClientAuth(baseUrl, forceRefresh = false) {
   const currentKey = authConfig?.clientKey || "";
   if (!forceRefresh && currentKey) {
     if (await validateApiKeyForSync(baseUrl, currentKey)) {
+      logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Existing client key is valid.`);
       if (isNearExpiry(authConfig.clientKeyExpiresAt)) {
+        logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Client key near expiry, rotating...`);
         apiKeyHeader = buildApiKeyHeader((await rotateClientKey(baseUrl, currentKey)) || currentKey);
-      } else { apiKeyHeader = buildApiKeyHeader(currentKey); }
+      } else {
+        apiKeyHeader = buildApiKeyHeader(currentKey);
+      }
+      scheduleAutomaticRotation(baseUrl);
       return;
     }
+    logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Existing client key is invalid or expired.`);
   }
+
   if (authConfig?.bootstrapKey) {
-    apiKeyHeader = buildApiKeyHeader(await issueClientKeyViaHandshake(baseUrl));
+    logStderr(`[${WRAPPER_NAME}][${PRD_ID}] Initiating handshake via bootstrap key...`);
+    const newKey = await issueClientKeyViaHandshake(baseUrl);
+    apiKeyHeader = buildApiKeyHeader(newKey);
+    scheduleAutomaticRotation(baseUrl);
     return;
   }
+
   if (currentKey) throw new Error("CCT_CLIENT_API_KEY is invalid and no bootstrap key is available for refresh.");
   throw new Error("No usable auth key found.");
 }

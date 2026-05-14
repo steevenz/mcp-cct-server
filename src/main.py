@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, Depends, HTTPException, status as http_status, Request, Header, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.security import APIKeyHeader
 from src.core.rate_limiter import get_rate_limiter
 from contextlib import asynccontextmanager
@@ -283,9 +283,20 @@ def _enforce_tls_policy(request: Request) -> None:
         logger.warning("AUTH_TLS_WARNING: insecure http request in local/dev mode")
 
 
+def _enforce_ip_whitelist(request: Request) -> None:
+    """Enforce IP whitelisting for administrative or handshake endpoints."""
+    if not settings.auth_allowed_ips:
+        return
+    client_ip = _client_ip(request)
+    if client_ip not in settings.auth_allowed_ips:
+        logger.warning(f"SECURITY_ALERT: Unauthorized IP access attempt: {client_ip}")
+        raise HTTPException(status_code=403, detail="Access denied: IP not in whitelist")
+
+
 def _extract_presented_key(
     x_api_key: Optional[str],
     authorization: Optional[str],
+    query_key: Optional[str] = None,
 ) -> str:
     if authorization:
         value = authorization.strip()
@@ -293,17 +304,20 @@ def _extract_presented_key(
             token = value[7:].strip()
             if token:
                 return token
-    return (x_api_key or "").strip()
+    if x_api_key:
+        return x_api_key.strip()
+    return (query_key or "").strip()
 
 
 async def get_api_key(
     request: Request,
     api_key_header: Optional[str] = Depends(X_API_KEY),
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    api_key: Optional[str] = None, # Query parameter
 ):
     auth_service: AuthService = components["auth_service"]
     _enforce_tls_policy(request)
-    presented_key = _extract_presented_key(api_key_header, authorization)
+    presented_key = _extract_presented_key(api_key_header, authorization, api_key)
     result = auth_service.validate_api_key(
         presented_key,
         required_scope=None,
@@ -334,10 +348,11 @@ def require_scope(scope: str):
         request: Request,
         api_key_header: Optional[str] = Depends(X_API_KEY),
         authorization: Optional[str] = Header(default=None, alias="Authorization"),
+        api_key: Optional[str] = None, # Query parameter
     ) -> Dict[str, Any]:
         auth_service: AuthService = components["auth_service"]
         _enforce_tls_policy(request)
-        presented_key = _extract_presented_key(api_key_header, authorization)
+        presented_key = _extract_presented_key(api_key_header, authorization, api_key)
         result = auth_service.validate_api_key(
             presented_key,
             required_scope=scope,
@@ -465,6 +480,7 @@ async def auth_handshake_init(
     bootstrap_key: Optional[str] = Header(default=None, alias="X-BOOTSTRAP-KEY"),
 ):
     _enforce_tls_policy(request)
+    _enforce_ip_whitelist(request)
     if settings.auth_mode == "legacy_only":
         raise HTTPException(status_code=403, detail="handshake flow is disabled in legacy_only mode")
     if not bootstrap_key or not secrets.compare_digest(bootstrap_key.strip(), settings.bootstrap_api_key):
@@ -640,12 +656,8 @@ async def get_all_data(
     """
     Secure data observability endpoint with pagination and resource filters.
     Supports multi-LLM scoping via X-IDE-ORIGIN or X-LLM-INSTANCE-ID headers.
-    Query params:
-      - resource: all|sessions|thoughts|thinking_patterns|anti_patterns
-      - page: 1-based page index
-      - page_size: max 200
-      - session_id: optional filter for thoughts resource
     """
+    _enforce_ip_whitelist(request)
     del api_key  # consumed by Depends(get_api_key)
     llm_id = _llm_instance_id(request)
     requested_resource = resource.strip().lower()
@@ -1287,6 +1299,177 @@ async def mcp_http_endpoint(request: Request, api_key: Dict[str, Any] = Depends(
     except Exception as e:
         logger.error(f"Error in HTTP endpoint: {e}")
         raise HTTPException(status_code=500, detail="Failed to process MCP HTTP request") from e
+
+
+# ====================================================================
+# SHORTHAND & HANDSHAKE PORTAL
+# ====================================================================
+
+@app.get("/cct")
+async def shorthand_sse_endpoint(request: Request, api_key: Dict[str, Any] = Depends(require_scope("mcp:sse"))):
+    """Shorthand SSE endpoint for easier configuration."""
+    return await mcp_sse_endpoint(request, api_key)
+
+
+@app.post("/cct")
+async def shorthand_http_endpoint(request: Request, api_key: Dict[str, Any] = Depends(require_scope("mcp:sync"))):
+    """Shorthand HTTP endpoint for easier configuration."""
+    return await mcp_http_endpoint(request, api_key)
+
+
+@app.get("/handshake", response_class=HTMLResponse)
+async def handshake_portal(request: Request):
+    """Simple web portal for remote handshake and credential generation."""
+    _enforce_ip_whitelist(request)
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>CCT Handshake Portal</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 2rem; background: #f4f7f9; }
+            .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            h1 { color: #2c3e50; margin-top: 0; }
+            .form-group { margin-bottom: 1rem; }
+            label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
+            input { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; font-size: 1rem; }
+            button { background: #3498db; color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 1rem; font-weight: bold; transition: background 0.2s; }
+            button:hover { background: #2980b9; }
+            #result { margin-top: 2rem; display: none; }
+            .config-block { background: #2c3e50; color: #ecf0f1; padding: 1rem; border-radius: 4px; overflow-x: auto; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.9rem; margin-bottom: 1rem; position: relative; }
+            .copy-btn { position: absolute; right: 10px; top: 10px; background: rgba(255,255,255,0.2); border: none; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; cursor: pointer; }
+            .copy-btn:hover { background: rgba(255,255,255,0.3); }
+            .success-badge { color: #27ae60; font-weight: bold; margin-bottom: 1rem; display: block; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>CCT Cognitive Server</h1>
+            <p>Remote Handshake Portal</p>
+            
+            <div class="form-group">
+                <label for="bootstrapKey">Bootstrap API Key</label>
+                <input type="password" id="bootstrapKey" placeholder="Enter CCT_BOOTSTRAP_API_KEY">
+            </div>
+            
+            <div class="form-group">
+                <label for="ideName">IDE / Instance Name</label>
+                <input type="text" id="ideName" placeholder="e.g. cursor, vscode, windsurf, gemini-cli">
+            </div>
+            
+            <button onclick="doHandshake()">Generate Credentials</button>
+            
+            <div id="result">
+                <span class="success-badge">✓ Credentials Generated Successfully</span>
+                
+                <label>Gemini CLI (Header)</label>
+                <div class="config-block">
+                    <button class="copy-btn" onclick="copyText('geminiCmd')">Copy</button>
+                    <code id="geminiCmd"></code>
+                </div>
+
+                <label>Gemini CLI (Query Param)</label>
+                <div class="config-block">
+                    <button class="copy-btn" onclick="copyText('geminiQueryCmd')">Copy</button>
+                    <code id="geminiQueryCmd"></code>
+                </div>
+                
+                <label>MCP Config (JSON Headers)</label>
+                <div class="config-block">
+                    <button class="copy-btn" onclick="copyText('jsonConfig')">Copy</button>
+                    <code id="jsonConfig"></code>
+                </div>
+
+                <label>MCP Config (JSON Query Param)</label>
+                <div class="config-block">
+                    <button class="copy-btn" onclick="copyText('jsonQueryConfig')">Copy</button>
+                    <code id="jsonQueryConfig"></code>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+        <script>
+            async function doHandshake() {
+                const key = document.getElementById('bootstrapKey').value;
+                const ide = document.getElementById('ideName').value || 'remote-ide';
+                const nonce = Math.random().toString(36).substring(7);
+                
+                if (!key) { alert('Bootstrap Key is required'); return; }
+
+                try {
+                    // 1. Init Handshake
+                    const initResp = await fetch('/cognitive-api/v1/auth/handshake/init', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-BOOTSTRAP-KEY': key },
+                        body: JSON.stringify({ llm_instance_id: ide, client_nonce: nonce })
+                    });
+                    
+                    const initData = await initResp.json();
+                    if (initResp.status !== 200) throw new Error(initData.detail || 'Init failed');
+                    
+                    const { handshake_id, challenge, server_nonce } = initData.data;
+                    
+                    // 2. Generate Proof: HMAC-SHA256(bootstrap_key, handshake_id:ide:challenge)
+                    const message = `${handshake_id}:${ide}:${challenge}`;
+                    const proof = CryptoJS.HmacSHA256(message, key).toString();
+                    
+                    // 3. Complete Handshake
+                    const completeResp = await fetch('/cognitive-api/v1/auth/handshake/complete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-BOOTSTRAP-KEY': key },
+                        body: JSON.stringify({ handshake_id: handshake_id, client_proof: proof })
+                    });
+                    
+                    const completeData = await completeResp.json();
+                    if (completeResp.status !== 200) throw new Error(completeData.detail || 'Complete failed');
+                    
+                    const apiKey = completeData.data.api_key;
+                    const baseUrl = window.location.origin + '/cct';
+                    
+                    // Update UI
+                    document.getElementById('geminiCmd').innerText = `gemini mcp add --transport sse creative-critical-thinking ${baseUrl} --header "X-API-KEY: ${apiKey}" --header "X-IDE-ORIGIN: ${ide}"`;
+                    document.getElementById('geminiQueryCmd').innerText = `gemini mcp add --transport sse creative-critical-thinking "${baseUrl}?api_key=${apiKey}" --header "X-IDE-ORIGIN: ${ide}"`;
+                    
+                    const mcpConfig = {
+                        "url": baseUrl,
+                        "headers": {
+                            "X-API-KEY": apiKey,
+                            "X-IDE-ORIGIN": ide
+                        }
+                    };
+                    document.getElementById('jsonConfig').innerText = JSON.stringify(mcpConfig, null, 2);
+
+                    const mcpQueryConfig = {
+                        "url": `${baseUrl}?api_key=${apiKey}`,
+                        "headers": {
+                            "X-IDE-ORIGIN": ide
+                        }
+                    };
+                    document.getElementById('jsonQueryConfig').innerText = JSON.stringify(mcpQueryConfig, null, 2);
+                    
+                    document.getElementById('result').style.display = 'block';
+                } catch (e) {
+                    alert('Handshake Error: ' + e.message);
+                }
+            }
+
+            function copyText(id) {
+                const text = document.getElementById(id).innerText;
+                const dummy = document.createElement("textarea");
+                document.body.appendChild(dummy);
+                dummy.value = text;
+                dummy.select();
+                document.execCommand("copy");
+                document.body.removeChild(dummy);
+                alert('Copied to clipboard!');
+            }
+        </script>
+    </body>
+    </html>
+    """
 
 logger.info(f"Custom MCP SSE endpoint mounted at /cognitive-api/v1{mcp_path}")
 

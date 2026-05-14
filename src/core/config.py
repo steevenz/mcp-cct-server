@@ -26,6 +26,7 @@ class Settings:
     auth_legacy_enabled: bool
     auth_default_ttl_days: int
     auth_tls_dev_warn_only: bool
+    auth_allowed_ips: set[str]
     env: str
     mcp_secret: str | None
     # User operational preferences
@@ -216,6 +217,9 @@ def load_settings() -> Settings:
     )
 
     auth_tls_dev_warn_only = (os.getenv("CCT_AUTH_TLS_DEV_WARN_ONLY", "true").strip().lower() in {"1", "true", "yes", "on"})
+
+    auth_allowed_ips_raw = os.getenv("CCT_AUTH_ALLOWED_IPS", "").strip()
+    auth_allowed_ips = {ip.strip() for ip in auth_allowed_ips_raw.split(",") if ip.strip()}
 
     # Tool Group Configuration
     default_groups = "core,primitive,hybrid,hitl"

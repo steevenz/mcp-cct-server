@@ -1,7 +1,18 @@
 services:
   cct-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
+    ports:
+      - "8001:8010"
+    volumes:
+      - ./database:/app/database
+      - ./.env:/app/.env
     environment:
+      CCT_HOST: 0.0.0.0
+      CCT_PORT: 8010
+      CCT_TRANSPORT: sse
       CCT_LOG_LEVEL: WARNING
       CCT_MAX_SESSIONS: 500
       CCT_BOOTSTRAP_API_KEY: ${CCT_BOOTSTRAP_API_KEY}

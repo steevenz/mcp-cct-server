@@ -26,7 +26,9 @@
 - Added bootstrap key generator script `scripts/server/keygen.py` with `--install` flow for legacy client compatibility and `.env` automation.
 - Updated Node wrapper API key resolution to prefer `CCT_CLIENT_API_KEY` then fallback to `CCT_DASHBOARD_API_KEY`.
 - Added auth unit tests covering legacy validation, handshake issuance, scoped authorization, rotation, and rate limiting.
+- Updated `.gitignore` to exclude large model files, cleaned Git history of heavy `.gguf` assets (saving 6GB+ from history), and pushed the v1.1.0 codebase (150 files) successfully to GitHub.
+- Refactored Node wrapper (`cct-mcp`) with robust auth handshake persistence (atomic writes), background key rotation scheduling (12h before expiry), and enhanced architectural logging.
+- Verified wrapper `.env` persistence and parsing logic via standalone simulation test (`tests/integration/test_wrapper_auth_sim.js`).
 
 ## Target Queue
-1. Add wrapper-side automatic handshake + key rotation persistence (currently wrapper supports env-based key selection, no automatic handshake call yet).
-2. Run Docker smoke deployment with new auth endpoints and verify handshake/rotate/revoke flow on `8010` once Docker daemon is available.
+1. Run Docker smoke deployment with new auth endpoints and verify handshake/rotate/revoke flow on `8010` (BLOCKED: Docker daemon not running).
